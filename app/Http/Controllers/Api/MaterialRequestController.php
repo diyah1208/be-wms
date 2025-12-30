@@ -127,29 +127,28 @@ class MaterialRequestController extends Controller
 
     public function generateKode(Request $request)
     {
-        $lokasi = $request->lokasi;
+        $lokasiNama = strtoupper(trim($request->lokasi)); 
+        $lokasiKode = $this->getLokasiKode($lokasiNama);  
         $tahunBulan = now()->format('y/m');
 
-        $last = MaterialRequestModel::where('mr_lokasi', $lokasi)
+        $last = MaterialRequestModel::where('mr_lokasi', $lokasiNama)
             ->where('mr_kode', 'like', "%/$tahunBulan/%")
-            ->orderBy('mr_id', 'desc') 
+            ->orderBy('mr_id', 'desc')
             ->first();
 
-        $nextNumber = 1;
-
-        if ($last) {
-            $lastNumber = (int) substr($last->mr_kode, -5);
-            $nextNumber = $lastNumber + 1;
-        }
+        $nextNumber = $last
+            ? ((int) substr($last->mr_kode, -5)) + 1
+            : 1;
 
         $kode = sprintf(
             "GMI/%s/%s/%05d",
-            $lokasi,
+            $lokasiKode, 
             $tahunBulan,
             $nextNumber
         );
 
         return response()->json($kode);
     }
+
 
 }

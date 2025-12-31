@@ -13,38 +13,6 @@ class PurchaseRequestController extends Controller
     public function index(Request $request)
     {
         $query = PurchaseRequestModel::with('pic','details');
-
-        if ($request->filled('pr_kode')) {
-            $query->where('pr_kode', 'like', '%' . $request->pr_kode . '%');
-        }
-
-        if ($request->filled('pr_lokasi')) {
-            $query->where('pr_lokasi', 'like', '%' . $request->pr_lokasi . '%');
-        }
-
-        if ($request->filled('pr_status')) {
-            $query->where('pr_status', $request->pr_status);
-        }
-
-        if ($request->filled('pic_nama')) {
-            $query->whereHas('pic', function ($q) use ($request) {
-                $q->where('nama', 'like', '%' . $request->pic_nama . '%');
-            });
-        }
-
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('pr_kode', 'like', "%{$search}%")
-                  ->orWhere('pr_lokasi', 'like', "%{$search}%")
-                  ->orWhere('pr_status', 'like', "%{$search}%")
-                  ->orWhereHas('pic', function ($q2) use ($search) {
-                      $q2->where('nama', 'like', "%{$search}%")
-                         ->orWhere('email', 'like', "%{$search}%");
-                  });
-            });
-        }
-
         return response()->json($query->get(), 200);
     }
 

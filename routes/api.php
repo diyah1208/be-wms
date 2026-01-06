@@ -111,6 +111,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [PurchaseRequestController::class, 'index']);
         Route::post('/', [PurchaseRequestController::class, 'store']);
         Route::get('/kode/{kode}', [PurchaseRequestController::class, 'showKode'])->where('kode', '.*');
+        Route::get('/open', [PurchaseOrderController::class, 'getPrOpen']);
         Route::get('/{id}', [PurchaseRequestController::class, 'show']);
         Route::put('/{id}', [PurchaseRequestController::class, 'update']);
         Route::delete('/{id}', [PurchaseRequestController::class, 'destroy']);

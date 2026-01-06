@@ -11,6 +11,22 @@ use Illuminate\Support\Facades\DB;
 
 class PurchaseOrderController extends Controller
 {
+    public function getPrOpen(Request $request)
+    {
+        $data = PurchaseRequestModel::with([
+                'details',  
+                'details.mr',         
+            ])
+            ->where('pr_status', 'open')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json([
+            'status' => true,
+            'data'   => $data
+        ]);
+    }
+    
     public function index()
     {
         $pos = PurchaseOrderModel::with('purchaseRequest')
@@ -24,8 +40,8 @@ class PurchaseOrderController extends Controller
                 'kode_pr' => $po->purchaseRequest->pr_kode ?? null,
                 'tanggal' => $po->po_tanggal,
                 'tanggal_estimasi' => $po->po_estimasi,
-                'status' => strtolower($po->po_status),
-                'pic' => $po->po_pic,
+                'status' => strtolower($po->po_status), 
+                'pic' => $po->po_pic,                   
                 'keterangan' => $po->po_keterangan,
                 'created_at' => $po->created_at?->toDateTimeString(),
                 'updated_at' => $po->updated_at?->toDateTimeString(),
@@ -41,36 +57,48 @@ class PurchaseOrderController extends Controller
             'po_tanggal'     => 'required|date',
             'po_estimasi'    => 'nullable|date',
             'po_keterangan'  => 'nullable|string',
+            'po_pic'         => 'required|string',
+            'po_status'      => 'required|in:pending,purchased',
             'details'        => 'required|array',
+            'details.*.part_id' => 'required',
+            'details.*.dtl_po_qty' => 'required|numeric|min:1',
         ]);
 
         DB::transaction(function () use ($request) {
+
+            $pr = PurchaseRequestModel::lockForUpdate()
+                ->where('pr_id', $request->pr_id)
+                ->firstOrFail();
 
             $po = PurchaseOrderModel::create([
                 'po_kode'       => $request->po_kode,
                 'pr_id'         => $request->pr_id,
                 'po_tanggal'    => $request->po_tanggal,
                 'po_estimasi'   => $request->po_estimasi,
-                'po_status'     => $request->po_status,
+                'po_status'     => $request->po_status, 
                 'po_keterangan' => $request->po_keterangan,
                 'po_pic'        => $request->po_pic,
             ]);
 
             foreach ($request->details as $item) {
                 PurchaseOrderDetailModel::create([
-                    'po_id'                 => $po->po_id,
-                    'part_id'               => $item['part_id'],
-                    'dtl_po_part_number'    => $item['dtl_po_part_number'],
-                    'dtl_po_part_name'      => $item['dtl_po_part_name'],
-                    'dtl_po_satuan'         => $item['dtl_po_satuan'],
-                    'dtl_po_qty'            => $item['dtl_po_qty'],
+                    'po_id'              => $po->po_id,
+                    'part_id'            => $item['part_id'],
+                    'dtl_po_part_number' => $item['dtl_po_part_number'],
+                    'dtl_po_part_name'   => $item['dtl_po_part_name'],
+                    'dtl_po_satuan'      => $item['dtl_po_satuan'],
+                    'dtl_po_qty'         => $item['dtl_po_qty'],
                     'dtl_qty_received'   => 0,
                 ]);
+            }
+
+            if ($request->po_status === 'purchased') {
+                $pr->update(['pr_status' => 'closed']);
             }
         });
 
         return response()->json([
-            'message' => 'Purchase Order created'
+            'message' => 'Purchase Order berhasil dibuat'
         ], 201);
     }
 
@@ -80,8 +108,8 @@ class PurchaseOrderController extends Controller
             'purchaseRequest',
             'details',
         ])
-        ->where('po_kode', $kode)
-        ->firstOrFail();
+            ->where('po_kode', $kode)
+            ->firstOrFail();
 
         return response()->json($po);
     }
@@ -97,8 +125,8 @@ class PurchaseOrderController extends Controller
             'kode_pr' => $po->purchaseRequest->pr_kode ?? null,
             'tanggal' => $po->po_tanggal,
             'tanggal_estimasi' => $po->po_estimasi,
-            'status' => strtolower($po->po_status),
-            'pic' => $po->po_pic,
+            'status' => strtolower($po->po_status), // ❗ tetap
+            'pic' => $po->po_pic,                   // ❗ tetap
             'keterangan' => $po->po_keterangan,
             'created_at' => $po->created_at?->toDateTimeString(),
             'updated_at' => $po->updated_at?->toDateTimeString(),
@@ -116,25 +144,39 @@ class PurchaseOrderController extends Controller
 
     public function update(Request $request, $id)
     {
-        $po = PurchaseOrderModel::findOrFail($id);
+        $po = PurchaseOrderModel::lockForUpdate()->findOrFail($id);
+
+        if ($po->po_status !== 'pending') {
+            return response()->json([
+                'message' => 'PO tidak dapat diedit karena status sudah ' . $po->po_status
+            ], 403);
+        }
 
         $data = $request->validate([
-            'po_kode' => 'sometimes|required|unique:tb_purchase_order,po_kode,' . $po->po_id . ',po_id',
-            'po_tanggal' => 'sometimes|required|date',
-            'po_estimasi' => 'nullable|date',
-            'po_status' => 'nullable|string',
+            'po_status' => 'required|in:purchased',
             'po_keterangan' => 'nullable|string',
+            'po_estimasi' => 'nullable|date',
         ]);
 
-        $po->update($data);
+        DB::transaction(function () use ($po, $data) {
+
+            $po->update([
+                'po_status' => 'purchased',
+                'po_keterangan' => $data['po_keterangan'] ?? $po->po_keterangan,
+                'po_estimasi' => $data['po_estimasi'] ?? $po->po_estimasi,
+            ]);
+
+            PurchaseRequestModel::where('pr_id', $po->pr_id)
+                ->update(['pr_status' => 'closed']);
+        });
 
         return response()->json([
             'status' => true,
-            'message' => 'Purchase Order berhasil diperbarui',
+            'message' => 'PO berhasil diupdate menjadi purchased',
             'data' => [
                 'id' => $po->po_id,
                 'kode' => $po->po_kode,
-                'status' => strtolower($po->po_status),
+                'status' => $po->po_status,
             ]
         ]);
     }

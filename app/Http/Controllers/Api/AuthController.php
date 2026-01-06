@@ -50,20 +50,20 @@ class AuthController extends Controller
             'nama'     => 'required|string',
             'email'    => 'required|email|unique:users,email',
             'password' => 'required|min:6',
+            'lokasi' => 'required|string',
+
         ]);
 
         $user = UserModel::create([
             'nama'     => $request->nama,
             'email'    => $request->email,
             'password' => Hash::make($request->password),
-            'role'     => $request->role,
-            'lokasi'   => $request->lokasi,
+'role'     => 'user',      // ✅ DEFAULT
+        'lokasi'   => $request->lokasi,    // ✅ DEFAULT (sesuaikan)
         ]);
 
-        $user->sendEmailVerificationNotification();
-
         return response()->json([
-            'message' => 'Pendaftaran berhasil. Silakan cek email untuk verifikasi.'
+            'message' => 'Pendaftaran berhasil. Silakan login.'
         ]);
     }
 

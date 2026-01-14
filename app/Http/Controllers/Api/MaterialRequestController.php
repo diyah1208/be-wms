@@ -3,12 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
 use App\Models\MaterialRequestModel;
 use App\Models\MaterialRequestItemModel;
-
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
+use App\Models\MaterialRequestModel as MaterialRequest;
 class MaterialRequestController extends Controller
 {
     /**
@@ -32,27 +36,35 @@ class MaterialRequestController extends Controller
         return $this->lokasiKodeMap[strtoupper($lokasi)] ?? 'UNK';
     }
 
-    public function index(Request $request)
+    /* =====================================================
+     * INDEX
+     * ===================================================== */
+    public function index()
     {
-        $query = MaterialRequestModel::with('details');
-        return response()->json($query->get());
+        return response()->json(
+            MaterialRequestModel::with('details')
+                ->orderBy('created_at', 'desc')
+                ->get()
+        );
     }
 
+    /* =====================================================
+     * STORE (CREATE MR)
+     * ===================================================== */
     public function store(Request $request)
     {
         $request->validate([
-            'mr_tanggal'  => 'required',
-            'mr_lokasi'   => 'required',
+            'mr_tanggal'  => 'required|date',
+            'mr_lokasi'   => 'required|string',
             'mr_pic'      => 'required',
-            'mr_due_date' => 'required',
-            'details'     => 'required|array'
+            'mr_due_date' => 'required|date',
+            'details'     => 'required|array|min:1'
         ]);
 
         return DB::transaction(function () use ($request) {
 
-            $lokasiNama = strtoupper($request->mr_lokasi);    
-            $lokasiKode = $this->getLokasiKode($lokasiNama); 
-
+            $lokasiNama = strtoupper($request->mr_lokasi);
+            $lokasiKode = $this->getLokasiKode($lokasiNama);
             $now = now();
 
             $lastMr = MaterialRequestModel::where('mr_lokasi', $lokasiNama)
@@ -73,62 +85,401 @@ class MaterialRequestController extends Controller
                 $urutan
             );
 
-            $materialreq = MaterialRequestModel::create([
+            $mr = MaterialRequestModel::create([
                 'mr_kode'     => $mrKode,
                 'mr_tanggal'  => $request->mr_tanggal,
                 'mr_lokasi'   => $lokasiNama,
                 'mr_pic'      => $request->mr_pic,
                 'mr_due_date' => $request->mr_due_date,
-                'mr_status'   => 'open'
+                'mr_status'   => 'open',
+                  // ✅ AUDIT BENAR
+    'mr_last_edit_by' => auth()->user()->name,
+    'mr_last_edit_at' => now(),
             ]);
 
             foreach ($request->details as $item) {
                 MaterialRequestItemModel::create([
-                    'mr_id'               => $materialreq->mr_id,
+                    'mr_id'               => $mr->mr_id,
                     'part_id'             => $item['part_id'],
                     'dtl_mr_part_number'  => $item['dtl_mr_part_number'],
                     'dtl_mr_part_name'    => $item['dtl_mr_part_name'],
                     'dtl_mr_satuan'       => $item['dtl_mr_satuan'],
                     'dtl_mr_prioritas'    => $item['dtl_mr_prioritas'],
-                    'dtl_mr_qty_request'  => (int) ($item['dtl_mr_qty_request'] ?? 0),
+                    'dtl_mr_qty_request'  => (int) $item['dtl_mr_qty_request'],
                     'dtl_mr_qty_received' => 0
                 ]);
             }
 
-            return response()->json($materialreq, 201);
+            return response()->json($mr, 201);
         });
     }
 
-
+    /* =====================================================
+     * SHOW BY ID
+     * ===================================================== */
     public function show($id)
     {
-        $mr = MaterialRequestModel::with('pic')->findOrFail($id);
-        return response()->json($mr);
+        return response()->json(
+            MaterialRequestModel::with(['details'])->findOrFail($id)
+        );
     }
 
-    public function getOpenMR()
-    {
-        $data = MaterialRequestModel::where('mr_status', 'open')
-            ->orderBy('created_at', 'desc')
-            ->get(['mr_id', 'mr_kode']);
-
-        return response()->json($data);
-    }
-
-
+    /* =====================================================
+     * SHOW BY KODE
+     * ===================================================== */
     public function showKode($kode)
     {
-        $mr = MaterialRequestModel::with('details')
+        $mr = MaterialRequestModel::with(['details'])
             ->where('mr_kode', $kode)
             ->firstOrFail();
 
         return response()->json($mr);
-    }   
+    }
 
+    /* =====================================================
+     * GET OPEN MR
+     * ===================================================== */
+    public function getOpenMR()
+    {
+        return response()->json(
+            MaterialRequestModel::where('mr_status', 'open')
+                ->orderBy('created_at', 'desc')
+                ->get(['mr_id', 'mr_kode'])
+        );
+    }
+
+    /* =====================================================
+     * UPDATE MR (STATUS / ITEM) — SINGLE ENDPOINT
+     * ===================================================== */
+    public function update(Request $request, $id)
+    {
+        $mr = MaterialRequestModel::with('details')->findOrFail($id);
+
+        // 🔒 hanya boleh edit saat OPEN
+        if ($mr->mr_status !== 'open') {
+            return response()->json([
+                'message' => 'MR tidak bisa diedit karena status bukan OPEN'
+            ], 403);
+        }
+
+        /* ===============================
+         * UPDATE STATUS MR
+         * =============================== */
+        if ($request->has('mr_status')) {
+
+            $status = $request->mr_status === 'close'
+                ? 'closed'
+                : $request->mr_status;
+
+            $mr->update([
+                'mr_status' => $status,
+                'mr_last_edit_at' => now(),
+                'mr_last_edit_by' => auth()->user()->name,
+            ]);
+
+            return response()->json([
+                'message' => 'Status MR berhasil diupdate'
+            ]);
+        }
+
+        /* ===============================
+         * UPDATE ITEM MR
+         * =============================== */
+        $request->validate([
+            'dtl_mr_id' => 'required',
+            'part_id' => 'required',
+            'dtl_mr_part_number' => 'required|string',
+            'dtl_mr_part_name' => 'required|string',
+            'dtl_mr_satuan' => 'required|string',
+            'dtl_mr_prioritas' => 'required|string',
+            'dtl_mr_qty_request' => 'required|integer|min:1'
+        ]);
+
+        $item = MaterialRequestItemModel::findOrFail($request->dtl_mr_id);
+
+        // pastikan item milik MR ini
+        if ($item->mr_id !== $mr->mr_id) {
+            return response()->json([
+                'message' => 'Item bukan milik MR ini'
+            ], 403);
+        }
+
+        $item->update([
+            'part_id' => $request->part_id,
+            'dtl_mr_part_number' => $request->dtl_mr_part_number,
+            'dtl_mr_part_name' => $request->dtl_mr_part_name,
+            'dtl_mr_satuan' => $request->dtl_mr_satuan,
+            'dtl_mr_prioritas' => $request->dtl_mr_prioritas,
+            'dtl_mr_qty_request' => $request->dtl_mr_qty_request
+            // ❌ qty_received tidak boleh diupdate
+        ]);
+
+        // audit MR
+        $mr->update([
+            'mr_last_edit_at' => now(),
+            'mr_last_edit_by' => auth()->user()->name ?? 'SYSTEM'
+        ]);
+
+        return response()->json([
+            'message' => 'Item MR berhasil diupdate'
+        ]);
+    }
+public function deleteDetail(string $detailId): JsonResponse
+{
+    return DB::transaction(function () use ($detailId) {
+
+        $detail = MaterialRequestItemModel::with('materialRequest')
+            ->findOrFail($detailId);
+
+        $mr = $detail->materialRequest;
+
+        // 🔒 MR harus OPEN
+        if ($mr->mr_status !== 'open') {
+            return response()->json([
+                'message' => 'Detail tidak bisa dihapus karena MR bukan OPEN'
+            ], 403);
+        }
+
+        // 🔒 Tidak boleh hapus kalau sudah ada penerimaan
+        if ((int) $detail->dtl_mr_qty_received > 0) {
+            return response()->json([
+                'message' => 'Detail tidak bisa dihapus karena sudah ada barang diterima'
+            ], 403);
+        }
+
+        // 🗑️ HAPUS DETAIL
+        $detail->delete();
+
+        // 📝 Audit MR
+        $mr->update([
+            'mr_last_edit_at' => now(),
+            'mr_last_edit_by' => auth()->user()->name,
+        ]);
+
+        return response()->json([
+            'message' => 'Detail MR berhasil dihapus'
+        ]);
+    });
+}
+
+
+
+
+// public function sign(Request $request)
+// {
+//     try {
+//         // Validasi input
+//         $validator = Validator::make($request->all(), [
+//             'kode' => 'required|string',
+//             'signature' => 'required|string',
+//         ]);
+
+//         if ($validator->fails()) {
+//             return response()->json([
+//                 'success' => false,
+//                 'message' => 'Validasi gagal',
+//                 'errors' => $validator->errors()
+//             ], 422);
+//         }
+
+//         // 🔥 AMBIL KODE DARI REQUEST (BUKAN PARAMETER FUNCTION)
+//         $kode = $request->kode;
+
+//         // Cari MR berdasarkan kode
+//         $mr = MaterialRequest::where('mr_kode', $kode)->first();
+
+//         if (!$mr) {
+//             return response()->json([
+//                 'success' => false,
+//                 'message' => 'Material Request tidak ditemukan'
+//             ], 404);
+//         }
+
+//         // Ambil base64 signature
+//         $signatureData = $request->signature;
+
+//         // Remove prefix base64
+//         $signatureData = preg_replace(
+//             '/^data:image\/\w+;base64,/',
+//             '',
+//             $signatureData
+//         );
+
+//         // Decode base64
+//         $decodedImage = base64_decode($signatureData);
+
+//         if ($decodedImage === false) {
+//             return response()->json([
+//                 'success' => false,
+//                 'message' => 'Format signature tidak valid'
+//             ], 400);
+//         }
+
+//         // Generate filename
+//         $filename = 'signature_' . time() . '.png';
+//         $path = 'signatures/' . $filename;
+
+//         // Simpan ke storage public
+//         Storage::disk('public')->put($path, $decodedImage);
+
+//         // Update MR
+//         $mr->signature_url = Storage::url($path); // /storage/signatures/xxx.png
+//         $mr->sign_at = now();
+//         $mr->save();
+
+//         return response()->json([
+//             'success' => true,
+//             'message' => 'Tanda tangan berhasil disimpan',
+//             'data' => [
+//                 'kode' => $mr->mr_kode,
+//                 'signature_url' => $mr->signature_url,
+//                 'sign_at' => $mr->sign_at
+//             ]
+//         ], 200);
+
+//     } catch (\Exception $e) {
+//         \Log::error('Error saving signature: ' . $e->getMessage());
+
+//         return response()->json([
+//             'success' => false,
+//             'message' => 'Gagal menyimpan tanda tangan'
+//         ], 500);
+//     }
+// }
+
+/* =====================================================
+     * SIGN MR (FROM MOBILE)
+     * ===================================================== */
+public function sign(Request $request): JsonResponse
+{
+    try {
+        $request->validate([
+            'kode' => 'required|string',
+            'signature' => 'required|string',
+        ]);
+
+        // 🔍 Cari MR
+        $mr = MaterialRequest::where('mr_kode', $request->kode)->first();
+
+        if (!$mr) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Material Request tidak ditemukan'
+            ], 404);
+        }
+
+        // 🗑️ Hapus signature lama jika ada
+        if (!empty($mr->signature_url)) {
+            $oldPath = str_replace('/storage/', '', $mr->signature_url);
+            if (Storage::disk('public')->exists($oldPath)) {
+                Storage::disk('public')->delete($oldPath);
+            }
+        }
+
+        // ✂️ Bersihkan base64 (WAJIB)
+        $signatureData = preg_replace(
+            '#^data:image/\w+;base64,#i',
+            '',
+            $request->signature
+        );
+        $signatureData = str_replace(' ', '+', $signatureData);
+
+        $decodedImage = base64_decode($signatureData);
+
+        if ($decodedImage === false) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Format signature tidak valid'
+            ], 422);
+        }
+
+        // 📁 Generate nama file AMAN (tanpa slash)
+        $safeKode = str_replace('/', '_', $mr->mr_kode);
+        $filename = 'signature_' . $safeKode . '.png';
+        $relativePath = 'signatures/' . $filename;
+
+        // 💾 Simpan ke storage/public
+        Storage::disk('public')->put($relativePath, $decodedImage);
+
+        // ✅ SIMPAN PATH RELATIF (BUKAN URL FULL)
+        $mr->update([
+            'signature_url' => $relativePath, // contoh: signatures/signature_GMI_JKT_25_7_00001.png
+            'sign_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Tanda tangan berhasil disimpan'
+        ]);
+
+    } catch (\Throwable $e) {
+        Log::error('SIGN ERROR', [
+            'message' => $e->getMessage(),
+            'line' => $e->getLine(),
+            'file' => $e->getFile(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal menyimpan tanda tangan'
+        ], 500);
+    }
+}
+
+
+
+/* =====================================================
+ * CLEAR SIGNATURE (RESET SEBELUM SCAN ULANG)
+ * ===================================================== */
+public function clearSignature(string $kode): JsonResponse
+{
+    try {
+        $mr = MaterialRequest::where('mr_kode', $kode)->first();
+
+        if (!$mr) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Material Request tidak ditemukan'
+            ], 404);
+        }
+
+        // 🗑️ Hapus file signature lama
+        if (!empty($mr->signature_url)) {
+            $path = $mr->signature_url; // sudah RELATIF
+            if (Storage::disk('public')->exists($path)) {
+                Storage::disk('public')->delete($path);
+            }
+        }
+
+        // ♻️ Reset kolom signature
+        $mr->update([
+            'signature_url' => null,
+            'sign_at' => null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Signature berhasil direset'
+        ]);
+    } catch (\Throwable $e) {
+        Log::error('CLEAR SIGNATURE ERROR', [
+            'message' => $e->getMessage(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal reset signature'
+        ], 500);
+    }
+}
+
+    /* =====================================================
+     * GENERATE KODE MR
+     * ===================================================== */
     public function generateKode(Request $request)
     {
-        $lokasiNama = strtoupper(trim($request->lokasi)); 
-        $lokasiKode = $this->getLokasiKode($lokasiNama);  
+        $lokasiNama = strtoupper(trim($request->lokasi));
+        $lokasiKode = $this->getLokasiKode($lokasiNama);
         $tahunBulan = now()->format('y/m');
 
         $last = MaterialRequestModel::where('mr_lokasi', $lokasiNama)
@@ -140,15 +491,12 @@ class MaterialRequestController extends Controller
             ? ((int) substr($last->mr_kode, -5)) + 1
             : 1;
 
-        $kode = sprintf(
+        return response()->json(sprintf(
             "GMI/%s/%s/%05d",
-            $lokasiKode, 
+            $lokasiKode,
             $tahunBulan,
             $nextNumber
-        );
-
-        return response()->json($kode);
+        ));
     }
-
-
+    
 }

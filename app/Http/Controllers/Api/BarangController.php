@@ -4,15 +4,17 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB; // ✅ WAJIB
+use Illuminate\Support\Facades\DB; 
+use Maatwebsite\Excel\Facades\Excel;
 use App\Models\BarangModel;
 use App\Models\StockModel;
+use App\Exports\BarangListExport;
 
 class BarangController extends Controller
 {
     private const LOKASI_LIST = [
         ['nama' => 'JAKARTA', 'kode' => 'JKT'],
-        ['nama' => 'TANJUNG ENIM', 'kode' => 'ENIM'],
+        ['nama' => 'MUARA ENIM', 'kode' => 'ENIM'],
         ['nama' => 'BALIKPAPAN', 'kode' => 'BPN'],
         ['nama' => 'SITE BA', 'kode' => 'BA'],
         ['nama' => 'SITE TAL', 'kode' => 'TAL'],
@@ -21,7 +23,6 @@ class BarangController extends Controller
         ['nama' => 'SITE BIB', 'kode' => 'BIB'],
         ['nama' => 'SITE AMI', 'kode' => 'AMI'],
         ['nama' => 'SITE TABANG', 'kode' => 'TAB'],
-        ['nama' => 'UNASSIGNED', 'kode' => 'UNASSIGNED'],
     ];
 
     public function index(Request $request)
@@ -112,5 +113,14 @@ class BarangController extends Controller
             'message' => 'Barang berhasil diupdate',
             'data'    => $barang
         ]);
+    }
+    public function exportBarang()
+    {
+        $deliveries = BarangModel::get();
+
+        return Excel::download(
+            new BarangListExport($deliveries), 
+            'DAFTAR_BARANG.xlsx'
+        );
     }
 }

@@ -8,13 +8,17 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\BarangController;
 use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\MaterialRequestController;
-use App\Http\Controllers\Api\MaterialRequestItemController;
+//use App\Http\Controllers\Api\MaterialRequestItemController;
 use App\Http\Controllers\Api\PurchaseRequestController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\ReceiveController;
 use App\Http\Controllers\Api\DeliveryController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ForgotPasswordController;
+use App\Http\Controllers\Api\SpbController;
+use App\Http\Controllers\Api\SpbPoController;
+use App\Http\Controllers\Api\SpbDoController;
+use App\Http\Controllers\Api\SpbInvoiceController;
 
 /*
 |--------------------------------------------------------------------------
@@ -48,7 +52,8 @@ Route::get('/email/verify/{id}/{hash}', function ($id, $hash) {
     return response()->json(['message' => 'Email verified successfully']);
 })->middleware('signed')->name('verification.verify');
 
-
+Route::middleware('api')->post('/mr/sign', [MaterialRequestController::class, 'sign']);
+Route::delete('/mr/{kode}/signature',[MaterialRequestController::class, 'clearSignature'])->where('kode', '.*');
 /*
 |--------------------------------------------------------------------------
 | AUTHENTICATED ROUTES
@@ -77,6 +82,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // ===== BARANG =====
     Route::prefix('barang')->group(function () {
         Route::get('/', [BarangController::class, 'index']);
+        Route::get('/export-excel', [BarangController::class, 'exportBarang']);
         Route::post('/', [BarangController::class, 'store']);
         Route::get('/{id}', [BarangController::class, 'show']);
         Route::put('/{id}', [BarangController::class, 'update']);
@@ -86,6 +92,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('stock')->group(function () {
         Route::get('/', [StockController::class, 'index']);
         Route::post('/', [StockController::class, 'store']);
+        Route::get('/export-excel', [StockController::class, 'exportStock']);
     });
 
     // ===== MATERIAL REQUEST (MR) =====
@@ -98,12 +105,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [MaterialRequestController::class, 'show']);
         Route::put('/{id}', [MaterialRequestController::class, 'update']);
         Route::delete('/{id}', [MaterialRequestController::class, 'destroy']);
-
-        // MR ITEMS
-        Route::get('/{mr_id}/items', [MaterialRequestItemController::class, 'index']);
-        Route::post('/{mr_id}/items', [MaterialRequestItemController::class, 'store']);
-        Route::put('/items/{item_id}', [MaterialRequestItemController::class, 'update']);
-        Route::delete('/items/{item_id}', [MaterialRequestItemController::class, 'destroy']);
     });
 
     // ===== PURCHASE REQUEST (PR) =====
@@ -136,17 +137,35 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/history', [ReceiveController::class, 'history']);
         Route::get('/purchase-orders', [ReceiveController::class, 'getPoPurchased']);
         Route::get('/kode/{kode}', [ReceiveController::class, 'showByKode'])->where('kode', '.*');
-        Route::get('/{id}', [ReceiveController::class, 'show']);
+        Route::get('/export-excel', [ReceiveController::class, 'exportReceive']);
     });
 
     // ===== DELIVERY =====
     Route::prefix('deliveries')->group(function () {
         Route::get('/', [DeliveryController::class, 'index']);
         Route::post('/', [DeliveryController::class, 'store']);
-        Route::get('/{id}', [DeliveryController::class, 'show']);
+        //Route::get('/{id}', [DeliveryController::class, 'show']);
         Route::get('/kode/{kode}', [DeliveryController::class, 'showKode']);
         Route::put('/kode/{kode}', [DeliveryController::class, 'update']);
         Route::patch('/kode/{kode}/status', [DeliveryController::class, 'updateStatus']);
+        Route::patch('/kode/{kode}/pickup-plan', [DeliveryController::class, 'updatePickupPlan']);
+        Route::post('/{kode}/receive', [DeliveryController::class, 'receive']);
+        Route::get('/{kode}/export/pdf',[DeliveryController::class, 'exportPdf']);
+        Route::post('/confirm-item', [ReceiveController::class, 'confirmItem']);
+        Route::get('/export-excel', [DeliveryController::class, 'exportDeliveryHeader']);
+    });
+
+    Route::prefix('spb')->group(function () {
+        Route::get('/', [SpbController::class, 'index']);
+        Route::get('/report', [SpbController::class, 'view']);
+        Route::post('/', [SpbController::class, 'store']);
+        Route::get('/generate-kode', [SpbController::class, 'generateKodeSpb']);
+        Route::get('/po', [SpbPoController::class, 'index']);
+        Route::post('/po', [SpbPoController::class, 'store']);
+        Route::get('/do', [SpbDoController::class, 'index']);
+        Route::post('/do', [SpbDoController::class, 'store']);
+        Route::get('/invoice', [SpbInvoiceController::class, 'index']);
+        Route::post('/invoice', [SpbInvoiceController::class, 'store']);
     });
 
     // ===== DASHBOARD =====

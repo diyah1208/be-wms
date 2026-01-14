@@ -125,8 +125,8 @@ class PurchaseOrderController extends Controller
             'kode_pr' => $po->purchaseRequest->pr_kode ?? null,
             'tanggal' => $po->po_tanggal,
             'tanggal_estimasi' => $po->po_estimasi,
-            'status' => strtolower($po->po_status), // ❗ tetap
-            'pic' => $po->po_pic,                   // ❗ tetap
+            'status' => strtolower($po->po_status), 
+            'pic' => $po->po_pic,                   
             'keterangan' => $po->po_keterangan,
             'created_at' => $po->created_at?->toDateTimeString(),
             'updated_at' => $po->updated_at?->toDateTimeString(),
@@ -191,4 +191,6 @@ class PurchaseOrderController extends Controller
             'message' => 'Purchase Order berhasil dihapus'
         ]);
     }
+
+    
 }

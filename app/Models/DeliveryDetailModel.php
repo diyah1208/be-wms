@@ -20,6 +20,7 @@ class DeliveryDetailModel extends Model
         'qty_pending',
         'created_at',
         'updated_at',
+        'receive_note',
     ];
 
     public function delivery()

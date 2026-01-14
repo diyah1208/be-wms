@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\StockListExport;
 use App\Models\StockModel;
 use App\Models\BarangModel;
+
 
 class StockController extends Controller
 {
@@ -60,6 +63,16 @@ class StockController extends Controller
             'message' => 'Stok baru berhasil ditambahkan',
             'data' => $stock
         ], 201);
+    }
+
+    public function exportStock()
+    {
+        $deliveries = StockModel::with('barang')->get();
+
+        return Excel::download(
+            new StockListExport($deliveries), 
+            'DAFTAR_STOCK.xlsx'
+        );
     }
 
 }

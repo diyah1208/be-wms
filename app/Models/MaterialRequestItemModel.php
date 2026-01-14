@@ -18,6 +18,10 @@ class MaterialRequestItemModel extends Model
         'dtl_mr_prioritas',
         'dtl_mr_qty_request',
         'dtl_mr_qty_received',
+        'mr_last_edit_by',
+            'mr_last_edit_at',
+            'signature_url',
+        'sign_at',
     ];
 
     public function materialRequest()

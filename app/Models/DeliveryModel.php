@@ -19,8 +19,13 @@ class DeliveryModel extends Model
         'dlv_no_resi',
         'dlv_pic',
         'dlv_status',
-        'created_at',
-        'updated_at',
+        'packing_at',
+        'pickup_plan_at',
+        'pickup_at',
+        'packing_by',
+        'on_delivery_at',
+        'delivered_at',
+        
     ];
     
     public function mr()

@@ -16,7 +16,9 @@ class PurchaseRequestModel extends Model
         'pr_lokasi',
         'pr_tanggal',
         'pr_status',
-        'pr_pic'
+        'pr_pic',
+              'signature_url',
+  'sign_at',
     ];
 
     // RELASI KE USER (PIC)

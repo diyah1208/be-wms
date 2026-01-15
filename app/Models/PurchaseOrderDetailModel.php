@@ -17,6 +17,10 @@ class PurchaseOrderDetailModel extends Model
         'dtl_po_satuan',
         'dtl_po_qty',
         'dtl_qty_received',
+         'dtl_po_harga',   // 🔥
+    'vendor_id',  
+            'signature_url',
+        'sign_at',
     ];
 
     public function purchaseOrder()
@@ -27,6 +31,16 @@ class PurchaseOrderDetailModel extends Model
             'po_id'
         );
     }
+public function vendor()
+{
+    return $this->belongsTo(
+        VendorModel::class,
+        'vendor_id', // FK di dtl_purchase_order
+        'id'         // PK di vendors (BENAR)
+    );
+}
+
+
 
     public function part()
     {

@@ -8,14 +8,17 @@ use App\Models\PurchaseOrderDetailModel;
 use App\Models\PurchaseRequestModel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Http\JsonResponse;
 
 class PurchaseOrderController extends Controller
 {
     public function getPrOpen(Request $request)
     {
         $data = PurchaseRequestModel::with([
-                'details',  
-                'details.mr',         
+                'details',
+                'details.mr',
             ])
             ->where('pr_status', 'open')
             ->orderBy('created_at', 'desc')
@@ -26,7 +29,8 @@ class PurchaseOrderController extends Controller
             'data'   => $data
         ]);
     }
-    
+
+
     public function index()
     {
         $pos = PurchaseOrderModel::with('purchaseRequest')
@@ -40,8 +44,9 @@ class PurchaseOrderController extends Controller
                 'kode_pr' => $po->purchaseRequest->pr_kode ?? null,
                 'tanggal' => $po->po_tanggal,
                 'tanggal_estimasi' => $po->po_estimasi,
-                'status' => strtolower($po->po_status), 
-                'pic' => $po->po_pic,                   
+                'status' => strtolower($po->po_status),
+                'detail_status' => $po->po_detail_status, 
+                'pic' => $po->po_pic,
                 'keterangan' => $po->po_keterangan,
                 'created_at' => $po->created_at?->toDateTimeString(),
                 'updated_at' => $po->updated_at?->toDateTimeString(),
@@ -62,6 +67,9 @@ class PurchaseOrderController extends Controller
             'details'        => 'required|array',
             'details.*.part_id' => 'required',
             'details.*.dtl_po_qty' => 'required|numeric|min:1',
+            'details.*.dtl_po_harga' => 'required|numeric|min:1',
+'details.*.vendor_id'   => 'required|exists:vendors,id',
+
         ]);
 
         DB::transaction(function () use ($request) {
@@ -69,15 +77,22 @@ class PurchaseOrderController extends Controller
             $pr = PurchaseRequestModel::lockForUpdate()
                 ->where('pr_id', $request->pr_id)
                 ->firstOrFail();
+foreach ($request->details as $item) {
+    if ($item['dtl_po_qty'] <= 0) {
+        abort(422, 'Qty PO harus lebih dari 0');
+    }
+}
 
             $po = PurchaseOrderModel::create([
-                'po_kode'       => $request->po_kode,
-                'pr_id'         => $request->pr_id,
-                'po_tanggal'    => $request->po_tanggal,
-                'po_estimasi'   => $request->po_estimasi,
-                'po_status'     => $request->po_status, 
+                'po_kode' => $request->po_kode,
+                'pr_id' => $request->pr_id,
+                'po_tanggal' => $request->po_tanggal,
+                'po_estimasi' => $request->po_estimasi,
+                'po_status' => $request->po_status,
+                'po_detail_status' =>  $request->po_detail_status,
                 'po_keterangan' => $request->po_keterangan,
-                'po_pic'        => $request->po_pic,
+                'po_pic' => $request->po_pic,
+                
             ]);
 
             foreach ($request->details as $item) {
@@ -88,6 +103,8 @@ class PurchaseOrderController extends Controller
                     'dtl_po_part_name'   => $item['dtl_po_part_name'],
                     'dtl_po_satuan'      => $item['dtl_po_satuan'],
                     'dtl_po_qty'         => $item['dtl_po_qty'],
+                     'dtl_po_harga'       => $item['dtl_po_harga'] ?? null, // 🔥
+    'vendor_id'          => $item['vendor_id'] ?? null,    // 🔥
                     'dtl_qty_received'   => 0,
                 ]);
             }
@@ -102,17 +119,18 @@ class PurchaseOrderController extends Controller
         ], 201);
     }
 
-    public function showKode($kode)
-    {
-        $po = PurchaseOrderModel::with([
-            'purchaseRequest',
-            'details',
-        ])
-            ->where('po_kode', $kode)
-            ->firstOrFail();
+ public function showKode($kode)
+{
+    $po = PurchaseOrderModel::with([
+        'purchaseRequest',
+        'details.vendor',
+    ])
+    ->where('po_kode', $kode)
+    ->firstOrFail();
 
-        return response()->json($po);
-    }
+    return response()->json($po);
+}
+
 
     public function show($id)
     {
@@ -125,8 +143,9 @@ class PurchaseOrderController extends Controller
             'kode_pr' => $po->purchaseRequest->pr_kode ?? null,
             'tanggal' => $po->po_tanggal,
             'tanggal_estimasi' => $po->po_estimasi,
-            'status' => strtolower($po->po_status), // ❗ tetap
-            'pic' => $po->po_pic,                   // ❗ tetap
+            'status' => strtolower($po->po_status),
+            'po_detail_status' => $po->po_detail_status, 
+            'pic' => $po->po_pic,
             'keterangan' => $po->po_keterangan,
             'created_at' => $po->created_at?->toDateTimeString(),
             'updated_at' => $po->updated_at?->toDateTimeString(),
@@ -153,30 +172,27 @@ class PurchaseOrderController extends Controller
         }
 
         $data = $request->validate([
-            'po_status' => 'required|in:purchased',
+            'po_detail_status' => 'required|string|max:50', 
             'po_keterangan' => 'nullable|string',
             'po_estimasi' => 'nullable|date',
         ]);
 
         DB::transaction(function () use ($po, $data) {
-
             $po->update([
-                'po_status' => 'purchased',
+                'po_detail_status' => $data['po_detail_status'],
                 'po_keterangan' => $data['po_keterangan'] ?? $po->po_keterangan,
                 'po_estimasi' => $data['po_estimasi'] ?? $po->po_estimasi,
             ]);
-
-            PurchaseRequestModel::where('pr_id', $po->pr_id)
-                ->update(['pr_status' => 'closed']);
         });
 
         return response()->json([
             'status' => true,
-            'message' => 'PO berhasil diupdate menjadi purchased',
+            'message' => 'Sub status PO berhasil diupdate',
             'data' => [
                 'id' => $po->po_id,
                 'kode' => $po->po_kode,
                 'status' => $po->po_status,
+                'detail_status' => $po->po_detail_status,
             ]
         ]);
     }
@@ -191,4 +207,114 @@ class PurchaseOrderController extends Controller
             'message' => 'Purchase Order berhasil dihapus'
         ]);
     }
+
+        public function sign(Request $request): JsonResponse
+{
+    try {
+        $request->validate([
+            'kode' => 'required|string',
+            'signature' => 'required|string',
+        ]);
+
+        $po = PurchaseOrderModel::where('po_kode', $request->kode)->first();
+
+        if (!$po) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Purchase Order tidak ditemukan'
+            ], 404);
+        }
+
+        if (!empty($po->signature_url)) {
+            $oldPath = str_replace('/storage/', '', $po->signature_url);
+            if (Storage::disk('public')->exists($oldPath)) {
+                Storage::disk('public')->delete($oldPath);
+            }
+        }
+
+        $signatureData = preg_replace(
+            '#^data:image/\w+;base64,#i',
+            '',
+            $request->signature
+        );
+        $signatureData = str_replace(' ', '+', $signatureData);
+
+        $decodedImage = base64_decode($signatureData);
+
+        if ($decodedImage === false) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Format signature tidak valid'
+            ], 422);
+        }
+
+        $safeKode = str_replace('/', '_', $po->po_kode);
+        $filename = 'signature_' . $safeKode . '.png';
+        $relativePath = 'signatures/' . $filename;
+
+        Storage::disk('public')->put($relativePath, $decodedImage);
+
+        $po->update([
+            'signature_url' => $relativePath, 
+            'sign_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Tanda tangan berhasil disimpan'
+        ]);
+
+    } catch (\Throwable $e) {
+        Log::error('SIGN ERROR', [
+            'message' => $e->getMessage(),
+            'line' => $e->getLine(),
+            'file' => $e->getFile(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal menyimpan tanda tangan'
+        ], 500);
+    }
+}
+
+public function clearSignature(string $kode): JsonResponse
+{
+    try {
+        $po = PurchaseOrderModel::where('po_kode', $kode)->first();
+
+        if (!$po) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Purchase Order tidak ditemukan'
+            ], 404);
+        }
+
+        if (!empty($po->signature_url)) {
+            $path = $po->signature_url; 
+            if (Storage::disk('public')->exists($path)) {
+                Storage::disk('public')->delete($path);
+            }
+        }
+
+        $po->update([
+            'signature_url' => null,
+            'sign_at' => null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Signature berhasil direset'
+        ]);
+    } catch (\Throwable $e) {
+        Log::error('CLEAR SIGNATURE ERROR', [
+            'message' => $e->getMessage(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal reset signature'
+        ], 500);
+    }
+}
 }

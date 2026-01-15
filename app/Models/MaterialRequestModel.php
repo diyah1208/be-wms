@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use App\Models\UserModel;
+use Illuminate\Http\JsonResponse;
 
 class MaterialRequestModel extends Model
 {
@@ -17,6 +18,12 @@ class MaterialRequestModel extends Model
         'mr_tanggal',
         'mr_due_date',
         'mr_status',
+         // 🔥 TAMBAHKAN INI
+    'mr_last_edit_by',
+    'mr_last_edit_at',
+      'signature_url',
+  'sign_at',
+
     ];
 
     public function details()

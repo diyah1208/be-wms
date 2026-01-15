@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\JsonResponse;
 
 class MaterialRequestItemModel extends Model
 {
@@ -18,6 +19,11 @@ class MaterialRequestItemModel extends Model
         'dtl_mr_prioritas',
         'dtl_mr_qty_request',
         'dtl_mr_qty_received',
+        'mr_last_edit_at',
+                'mr_last_edit_by',
+                  'signature_url',
+  'sign_at',
+
     ];
 
     public function materialRequest()

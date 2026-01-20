@@ -16,6 +16,9 @@ class ReceiveModel extends Model
         'ri_tanggal',
         'ri_keterangan',
         'ri_pic',
+        'signed_penerima_name',
+        'signed_penerima_sign',
+        'signed_penerima_at',
     ];
 
      public function purchaseOrder()

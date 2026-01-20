@@ -16,22 +16,19 @@ class SpbModel extends Model
         'spb_section',
         'spb_pic_gmi',
         'spb_pic_ppa',
-        'part_id',
-        'spb_part_number',
-        'spb_part_name',
-        'spb_qty',
-        'spb_uom',
         'spb_kode_unit',
         'spb_tipe_unit',
         'spb_brand',
         'spb_hm',
         'spb_problem_remark',
         'spb_status',
+        'spb_pic',
+        'spb_gudang',
     ];
 
-    public function part()
+    public function details()
     {
-        return $this->belongsTo(Barang::class, 'part_id', 'part_id');
+        return $this->hasMany(SpbDetailModel::class, 'spb_id', 'spb_id');
     }
 
     public function po()

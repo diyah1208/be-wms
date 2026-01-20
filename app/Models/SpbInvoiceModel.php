@@ -14,6 +14,7 @@ class SpbInvoiceModel extends Model
         'invoice_no',
         'invoice_date',
         'invoice_email_date',
+        'po_pic',
     ];
 
     public function spb()

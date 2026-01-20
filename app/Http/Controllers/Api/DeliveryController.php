@@ -11,11 +11,10 @@ use App\Models\StockModel;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\Support\Facades\Storage;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\DeliveryListExport;
-
-use Carbon\Carbon;
 
 class DeliveryController extends Controller
 {
@@ -36,6 +35,7 @@ class DeliveryController extends Controller
                 ->firstOrFail()
         );
     }
+
 
     public function store(Request $request)
     {
@@ -87,21 +87,13 @@ class DeliveryController extends Controller
             ->firstOrFail();
 
         $request->validate([
-            'status' => 'required|in:packing,ready to pickup,on delivery,delivered',
-            'pickup_plan_at' => 'nullable|date',
+            'status' => 'required|in:packing,ready to pickup,on delivery',
         ]);
 
-        $isHandCarry = $delivery->dlv_ekspedisi === 'Hand Carry';
-
         $allowed = [
-            'pending' => ['packing'],
-
-            'packing' => $isHandCarry
-                ? ['delivered']        
-                : ['ready to pickup'], 
-
-            'ready to pickup' => ['on delivery'],
-            'on delivery'     => ['delivered'],
+            'pending'          => ['packing'],
+            'packing'          => ['ready to pickup'],
+            'ready to pickup'  => ['on delivery'],
         ];
 
         if (!in_array($request->status, $allowed[$delivery->dlv_status] ?? [])) {
@@ -117,30 +109,15 @@ class DeliveryController extends Controller
             ]);
         }
 
-        if ($request->status === 'ready to pickup') {
-            if (!$request->pickup_plan_at) {
-                throw new Exception('pickup_plan_at wajib diisi');
-            }
-
-            $delivery->update([
-                'pickup_plan_at' => $request->pickup_plan_at,
-            ]);
-        }
-
         if ($request->status === 'on delivery') {
             $delivery->update([
                 'on_delivery_at' => now(),
             ]);
         }
 
-        if ($request->status === 'delivered') {
-            $delivery->update([
-                'delivered_at' => now(),
-                'pickup_at'    => now(),
-            ]);
-        }
-
-        $delivery->update(['dlv_status' => $request->status]);
+        $delivery->update([
+            'dlv_status' => $request->status,
+        ]);
 
         return response()->json([
             'message' => 'Status updated',
@@ -148,10 +125,10 @@ class DeliveryController extends Controller
         ]);
     }
 
+
     private function moveToPacking($delivery)
     {
         DB::transaction(function () use ($delivery) {
-
             foreach ($delivery->details as $item) {
 
                 if ($item->qty_pending <= 0) continue;
@@ -184,8 +161,8 @@ class DeliveryController extends Controller
             ->where('dlv_kode', $kode)
             ->firstOrFail();
 
-        if (!in_array($delivery->dlv_status, ['packing', 'on delivery'])) {
-            throw new Exception('Delivery belum bisa diterima');
+        if ($delivery->dlv_status !== 'on delivery') {
+            throw new Exception('Delivery belum dalam proses pengiriman');
         }
 
         $request->validate([
@@ -236,70 +213,79 @@ class DeliveryController extends Controller
 
                 $stock->increment('stk_qty', $input['qty_received']);
 
-                $mrDetail = MaterialRequestItemModel::where('mr_id', $delivery->mr_id)
+                MaterialRequestItemModel::where('mr_id', $delivery->mr_id)
                     ->where('part_id', $detail->part_id)
-                    ->lockForUpdate()
-                    ->firstOrFail();
-
-                $mrDetail->increment('dtl_mr_qty_received', $input['qty_received']);
+                    ->increment('dtl_mr_qty_received', $input['qty_received']);
             }
-
-            $mr = MaterialRequestModel::with('details')
-                ->findOrFail($delivery->mr_id);
-
-            $mr->update([
-                'mr_status' => $mr->details->every(
-                    fn ($d) => $d->dtl_mr_qty_received >= $d->dtl_mr_qty_request
-                ) ? 'close' : 'open',
-            ]);
-
-            $delivery->update([
-                'dlv_status'   => 'delivered',
-                'delivered_at' => now(),
-                'pickup_at'    => now(),
-            ]);
         });
 
         return response()->json([
-            'message' => 'Barang berhasil dikonfirmasi diterima',
+            'message' => 'Barang diterima, silakan TTD untuk menyelesaikan delivery',
+        ]);
+    }
+
+
+    public function signPenerima(Request $request, $kode)
+    {
+        $request->validate([
+            'signature' => 'required|string',
+        ]);
+
+        $delivery = DeliveryModel::with('details')
+            ->where('dlv_kode', $kode)
+            ->firstOrFail();
+
+        if ($delivery->dlv_status !== 'on delivery') {
+            throw new Exception('Belum bisa TTD penerima');
+        }
+
+        $path = $this->saveSignature($request->signature);
+
+        $delivery->update([
+            'signed_penerima_sign' => $path,
+            'signed_penerima_at'   => now(),
+            'dlv_status'           => 'delivered',
+            'delivered_at'         => now(),
+        ]);
+
+        return response()->json([
+            'message' => 'Delivery selesai',
             'status'  => 'delivered',
         ]);
     }
 
-    public function updatePickupPlan(Request $request, $kode)
+    private function saveSignature(string $base64): string
     {
-        $delivery = DeliveryModel::where('dlv_kode', $kode)->firstOrFail();
+        $clean = preg_replace('#^data:image/\w+;base64,#i', '', $base64);
+        $clean = str_replace(' ', '+', $clean);
 
-        if ($delivery->dlv_status !== 'ready to pickup') {
-            throw new Exception('Pickup plan hanya bisa diubah saat ready to pickup');
+        $image = base64_decode($clean);
+
+        if ($image === false) {
+            throw new Exception('Signature tidak valid');
         }
 
-        $request->validate([
-            'pickup_plan_at' => 'required|date',
-        ]);
+        $filename = 'penerima_' . uniqid() . '.png';
+        $path = 'signatures/' . $filename;
 
-        $delivery->update([
-            'pickup_plan_at' => Carbon::parse($request->pickup_plan_at),
-        ]);
+        Storage::disk('public')->put($path, $image);
 
-        return response()->json(['message' => 'Pickup plan updated']);
+        return $path;
     }
 
-     public function exportPdf($kode)
+    public function exportPdf($kode)
     {
         $delivery = DeliveryModel::with(['details', 'mr.details'])
             ->where('dlv_kode', $kode)
             ->firstOrFail();
 
-        $isHandCarry = $delivery->dlv_ekspedisi === 'Hand Carry';
-
         $pdf = Pdf::loadView(
             'exports.delivery-pdf',
-            compact('delivery', 'isHandCarry')
+            compact('delivery')
         )->setPaper('A4', 'portrait');
 
         return $pdf->download(
-            'DELIVERY_' . $delivery->dlv_tanggal . '.pdf'
+            'DELIVERY_' . $delivery->dlv_kode . '.pdf'
         );
     }
 
@@ -308,7 +294,7 @@ class DeliveryController extends Controller
         $deliveries = DeliveryModel::with('mr')->get();
 
         return Excel::download(
-            new DeliveryListExport($deliveries), 
+            new DeliveryListExport($deliveries),
             'DAFTAR_DELIVERY.xlsx'
         );
     }

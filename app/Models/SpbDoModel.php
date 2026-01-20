@@ -14,6 +14,7 @@ class SpbDoModel extends Model
         'do_no',
         'do_date',
         'do_status_part',
+        'do_pic',
     ];
 
     public function spb()

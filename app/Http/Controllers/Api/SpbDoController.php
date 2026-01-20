@@ -1,6 +1,4 @@
 <?php
-
-// app/Http/Controllers/Api/SpbDoController.php
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
@@ -36,7 +34,6 @@ class SpbDoController extends Controller
             'do_status_part' => $request->do_status_part,
         ]);
 
-        // UPDATE STATUS SPB
         SpbModel::where('spb_id', $request->spb_id)
             ->update(['spb_status' => 'DELIVERED']);
 

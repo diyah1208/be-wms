@@ -25,8 +25,11 @@ class DeliveryModel extends Model
         'packing_by',
         'on_delivery_at',
         'delivered_at',
-        
+        'signed_penerima_name',
+        'signed_penerima_sign',
+        'signed_penerima_at',
     ];
+
     
     public function mr()
     {

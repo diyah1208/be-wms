@@ -6,7 +6,7 @@
 
     <style>
         body {
-            font-family: "Times New Roman", Times, serif;
+            font-family: "calibri", Times, serif;
             font-size: 12px;
             margin: 40px 40px 30px 40px;
         }
@@ -36,7 +36,7 @@
         }
 
         .sign td {
-            padding-top: 55px;
+            padding-top: 60px;
             text-align: center;
         }
     </style>
@@ -52,11 +52,18 @@
                 src="{{ public_path('images/Logo Garuda Mart Indonesia.png') }}"
                 style="height:50px; display:block;"
             >
-            <div style="font-size:9px; margin-top:4px; line-height:1.4;">
-                Sentra Niaga Kalimalang Blok J5-8A<br>
-                Jakarta Timur, Indonesia<br>
-                Telp: (021) 847 7309
+            <div style="font-size:12px; margin-top:4px; line-height:1.4;">
+                <strong>PT. Garuda Mart Indonesia</strong><br>
+                RT.002/RW.012, Jatiasih, Kec. Jatiasih<br>
+                Kota Bekasi, Jawa Barat 17423<br>
+                Telp: (021) 82407309
             </div>
+        </td>
+        <td width="30%" align="right" valign="top">
+            <img
+                src="{{ public_path('images/Logo-Lourdes.png') }}"
+                style="height:45px;"
+            >
         </td>
     </tr>
 </table>
@@ -73,46 +80,55 @@
     </div>
 </div>
 
-
-{{-- ================= INFO DOKUMEN (2 KOLOM RAPI) ================= --}}
+{{-- ================= INFO DOKUMEN ================= --}}
 <table width="100%" style="margin-bottom:18px;">
     <tr>
-        <!-- KOLOM KIRI -->
         <td width="50%" valign="top">
-            <table width="100%">
+            <table width="100%" style="border-collapse:collapse;">
                 <tr>
-                    <td class="label" width="35%">Dari Site</td>
-                    <td width="65%">: {{ $delivery->dlv_dari_gudang }}</td>
+                    <td style="width:140px; font-weight:bold;">Lokasi Pengiriman</td>
+                    <td style="width:10px;">:</td>
+                    <td>{{ $delivery->dlv_dari_gudang }}</td>
+                </tr>
+
+                <tr>
+                    <td style="font-weight:bold;">Lokasi Penerima</td>
+                    <td>:</td>
+                    <td>{{ $delivery->dlv_ke_gudang }}</td>
+                </tr>
+
+                <tr>
+                    <td style="font-weight:bold;">Nomor Resi</td>
+                    <td>:</td>
+                    <td>{{ $delivery->dlv_no_resi ?? '-' }}</td>
                 </tr>
                 <tr>
-                    <td class="label">Ke Site</td>
-                    <td>: {{ $delivery->dlv_ke_gudang }}</td>
+                    <td style="width:120px; font-weight:bold;">Tanggal Pengiriman</td>
+                    <td style="width:8px;">:</td>
+                    <td>
+                        {{ \Carbon\Carbon::parse($delivery->created_at)
+                            ->locale('id')
+                            ->translatedFormat('l, d F Y') }}
+                    </td>
                 </tr>
                 <tr>
-                    <td class="label">No Resi</td>
-                    <td>: {{ $delivery->dlv_no_resi ?? '-' }}</td>
-                </tr>
-                 <tr>
-                    <td class="label" width="35%">Tanggal</td>
-                    <td width="65%">: {{ $delivery->created_at->format('d-m-Y') }}</td>
+                    <td style="font-weight:bold;">Jasa Pengiriman</td>
+                    <td>:</td>
+                    <td>{{ $delivery->dlv_ekspedisi }}</td>
                 </tr>
                 <tr>
-                    <td class="label">Ekspedisi</td>
-                    <td>: {{ $delivery->dlv_ekspedisi }}</td>
-                </tr>
-                <tr>
-                    <td class="label">PIC Dokumen</td>
-                    <td>: {{ $delivery->dlv_pic }}</td>
+                    <td style="font-weight:bold;">Penanggung Jawab</td>
+                    <td>:</td>
+                    <td>{{ $delivery->dlv_pic }}</td>
                 </tr>
             </table>
         </td>
     </tr>
 </table>
-
-{{-- ================= JUDUL DELIVERY (TENGAH, SEBELUM TABEL) ================= --}}
+{{-- ================= JUDUL DELIVERY ================= --}}
 <div style="text-align:right; margin: 18px 0 16px 0;">
-    <div style="font-size:13px; font-weight:bold;">
-        DELIVERY {{ $delivery->dlv_kode }}
+    <<div style="font-size:13px; font-weight:bold;">
+        DELIVERY {{ $delivery->dlv_kode }}/{{ strtoupper($delivery->dlv_dari_gudang) }}/{{ strtoupper($delivery->dlv_ke_gudang) }}
     </div>
 </div>
 
@@ -121,9 +137,9 @@
     <thead>
         <tr>
             <th width="5%">No</th>
-            <th width="18%">Part No</th>
-            <th>Deskripsi</th>
-            <th width="8%">Qty</th>
+            <th width="18%">Part Number</th>
+            <th>Part Name</th>
+            <th width="8%">Qty Kirim</th>
             <th width="10%">Satuan</th>
             <th width="12%">Qty Diterima</th>
             <th width="17%">Keterangan</th>
@@ -135,7 +151,7 @@
             <td>{{ $i + 1 }}</td>
             <td class="left">{{ $item->dtl_dlv_part_number }}</td>
             <td class="left">{{ $item->dtl_dlv_part_name }}</td>
-            <td>{{ $item->qty_dikirim }}</td>
+            <td>{{ $item->qty_on_delivery + $item->qty_delivered }}</td>
             <td>{{ $item->dtl_dlv_satuan }}</td>
             <td>{{ $item->qty_delivered }}</td>
             <td class="left">{{ $item->receive_note ?? '-' }}</td>
@@ -144,57 +160,37 @@
     </tbody>
 </table>
 
-{{-- ================= TANDA TANGAN ================= --}}
-<table class="sign" style="margin-top:40px;">
+{{-- ================= TANDA TANGAN (POJOK KANAN) ================= --}}
+<table class="sign" style="margin-top:50px; width:100%;">
     <tr>
-        {{-- WAREHOUSE PENGIRIM --}}
-        <td width="{{ $delivery->dlv_ekspedisi === 'Hand Carry' ? '50%' : '33%' }}">
-            Warehouse {{ $delivery->dlv_dari_gudang }}<br><br>
-
-            @if ($delivery->signed_pengirim_sign)
-                <img src="{{ public_path($delivery->signed_pengirim_sign) }}" height="45"><br>
-                <strong>{{ $delivery->signed_pengirim_name }}</strong><br>
-                <span style="font-size:10px;">
-                    {{ \Carbon\Carbon::parse($delivery->signed_pengirim_at)->format('d-m-Y H:i') }}
-                </span>
-            @else
-                ( __________________________ )
-            @endif
-        </td>
-
-        {{-- LOGISTIK (NON HAND CARRY) --}}
-        @if ($delivery->dlv_ekspedisi !== 'Hand Carry')
-        <td width="33%">
-            Logistik<br><br>
-
-            @if ($delivery->signed_logistik_sign)
-                <img src="{{ public_path($delivery->signed_logistik_sign) }}" height="45"><br>
-                <strong>{{ $delivery->signed_logistik_name }}</strong><br>
-                <span style="font-size:10px;">
-                    {{ \Carbon\Carbon::parse($delivery->signed_logistik_at)->format('d-m-Y H:i') }}
-                </span>
-            @else
-                ( __________________________ )
-            @endif
-        </td>
-        @endif
-
-        {{-- WAREHOUSE PENERIMA --}}
-        <td width="{{ $delivery->dlv_ekspedisi === 'Hand Carry' ? '50%' : '33%' }}">
-            Warehouse {{ $delivery->dlv_ke_gudang }}<br><br>
+        <td width="60%"></td>
+        <td width="40%" style="text-align:center; vertical-align:top;">
+            <div style="font-weight:bold;">
+                Warehouse Penerima
+            </div>
+            <div style="margin-bottom:8px;">
+                {{ $delivery->dlv_ke_gudang }}
+            </div>
 
             @if ($delivery->signed_penerima_sign)
-                <img src="{{ public_path($delivery->signed_penerima_sign) }}" height="45"><br>
-                <strong>{{ $delivery->signed_penerima_name }}</strong><br>
-                <span style="font-size:10px;">
+                <div style="height:70px; margin:10px 0;">
+                    <img
+                        src="{{ storage_path('app/public/' . $delivery->signed_penerima_sign) }}"
+                        style="max-width:180px; max-height:70px;"
+                    >
+                </div>
+
+                    <strong style="font-size:11px;">
+                        {{ $delivery->signed_penerima_name ?? $delivery->dlv_pic }}
+                    </strong>
+
+                <div style="font-size:9px; margin-top:2px;">
                     {{ \Carbon\Carbon::parse($delivery->signed_penerima_at)->format('d-m-Y H:i') }}
-                </span>
+                </div>
             @else
-                ( __________________________ )
             @endif
         </td>
     </tr>
 </table>
-
 </body>
 </html>

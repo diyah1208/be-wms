@@ -138,6 +138,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/purchase-orders', [ReceiveController::class, 'getPoPurchased']);
         Route::get('/kode/{kode}', [ReceiveController::class, 'showByKode'])->where('kode', '.*');
         Route::get('/export-excel', [ReceiveController::class, 'exportReceive']);
+        Route::get('/{kode}/export/pdf',[ReceiveController::class, 'exportPdf']);
+        Route::post('/{kode}/sign-penerima', [ReceiveController::class, 'signPenerima']);
     });
 
     // ===== DELIVERY =====
@@ -153,6 +155,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{kode}/export/pdf',[DeliveryController::class, 'exportPdf']);
         Route::post('/confirm-item', [ReceiveController::class, 'confirmItem']);
         Route::get('/export-excel', [DeliveryController::class, 'exportDeliveryHeader']);
+        Route::post('/{kode}/sign-penerima', [DeliveryController::class, 'signPenerima']);
     });
 
     Route::prefix('spb')->group(function () {
@@ -166,6 +169,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/do', [SpbDoController::class, 'store']);
         Route::get('/invoice', [SpbInvoiceController::class, 'index']);
         Route::post('/invoice', [SpbInvoiceController::class, 'store']);
+        Route::get('/kode/{kode}', [SpbController::class, 'showKode'])->where('kode', '.*');
+        Route::get('/export-excel', [SpbController::class, 'exportSpbExcel']);
+        Route::get('/print/{kode}', [SpbController::class, 'printSpb'])->where('kode', '.*');
     });
 
     // ===== DASHBOARD =====

@@ -12,7 +12,10 @@ use App\Models\MaterialRequestItemModel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
+use Barryvdh\DomPDF\Facade\Pdf;
 use App\Exports\ReceiveListExport;
+use Illuminate\Support\Facades\Storage;
+
 
 class ReceiveController extends Controller
 {
@@ -176,12 +179,69 @@ class ReceiveController extends Controller
 
     public function exportReceive()
     {
-        $deliveries = ReceiveModel::with('purchaseOrder')->get();
+        $receive = ReceiveModel::with('purchaseOrder')->get();
 
         return Excel::download(
-            new ReceiveListExport($deliveries), 
+            new ReceiveListExport($receive), 
             'DAFTAR_RECEIVE.xlsx'
         );
     }
 
+    public function signPenerima(Request $request, $kode)
+    {
+        $request->validate([
+            'signature' => 'required|string',
+        ]);
+
+        $receive = ReceiveModel::with('details')
+            ->where('ri_kode', $kode)
+            ->firstOrFail();
+
+        $path = $this->saveSignature($request->signature);
+
+        $receive->update([
+            'signed_penerima_sign' => $path,
+            'signed_penerima_at'   => now(),
+            'ri_status'           => 'received',
+        ]);
+
+        return response()->json([
+            'message' => 'Receive selesai',
+            'status'  => 'received',
+        ]);
+    }
+
+    private function saveSignature(string $base64): string
+    {
+        $clean = preg_replace('#^data:image/\w+;base64,#i', '', $base64);
+        $clean = str_replace(' ', '+', $clean);
+
+        $image = base64_decode($clean);
+
+        if ($image === false) {
+            throw new Exception('Signature tidak valid');
+        }
+
+        $filename = 'received_' . uniqid() . '.png';
+        $path = 'signatures/' . $filename;
+
+        Storage::disk('public')->put($path, $image);
+
+        return $path;
+    }
+    public function exportPdf($kode)
+    {
+        $receive = ReceiveModel::with(['details'])
+            ->where('ri_kode', $kode)
+            ->firstOrFail();
+
+        $pdf = Pdf::loadView(
+            'exports.receive-pdf',
+            compact('receive')
+        )->setPaper('A4', 'portrait');
+
+        return $pdf->download(
+            'RECEIVE_' . $receive->ri_kode . '.pdf'
+        );
+    }
 }

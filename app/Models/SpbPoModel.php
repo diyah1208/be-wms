@@ -15,6 +15,7 @@ class SpbPoModel extends Model
         'po_no',
         'so_no',
         'so_date',
+        'po_pic',
     ];
 
     public function spb()

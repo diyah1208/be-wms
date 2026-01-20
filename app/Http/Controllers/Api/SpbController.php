@@ -8,6 +8,7 @@ use App\Models\DeliveryDetailModel;
 use App\Models\MaterialRequestModel;
 use App\Models\MaterialRequestItemModel;
 use App\Models\StockModel;
+use App\Models\SpbDetailModel;
 use App\Models\BarangModel;
 use Exception;
 use App\Models\SpbModel;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Exports\DeliveryListExport;
+use App\Exports\SpbListExport;
 
 use Carbon\Carbon;
 
@@ -28,7 +30,16 @@ class SpbController extends Controller
         );
     }
 
-     public function view(Request $request)
+    public function showKode($kode)
+    {
+        return response()->json(
+            SpbModel::with(['details'])
+                ->where('spb_no', $kode)
+                ->firstOrFail()
+        );
+    }
+
+    public function view(Request $request)
     {
         $limit  = $request->get('limit', 10);
         $search = $request->get('search');
@@ -52,56 +63,109 @@ class SpbController extends Controller
         );
     }
 
-     public function store(Request $request)
+    public function store(Request $request)
     {
         $request->validate([
             'spb_tanggal' => 'required|date',
-            'spb_no' => 'required',
-            'part_id' => 'required|exists:tb_barang,part_id',
-            'spb_qty' => 'required|integer|min:1'
+            'spb_no'      => 'required',
+            'spb_gudang' => 'required|string|max:50',
+            'details'               => 'required|array|min:1',
+            'details.*.part_id'     => 'required|exists:tb_barang,part_id',
+            'details.*.dtl_spb_qty' => 'required|integer|min:1',
         ]);
 
-        $part = BarangModel::findOrFail($request->part_id);
+        DB::transaction(function () use ($request, &$spb) {
 
-        $spb = SpbModel::create([
-            'spb_tanggal' => $request->spb_tanggal,
-            'spb_no' => $request->spb_no,
-            'spb_no_wo' => $request->spb_no_wo,
-            'spb_section' => $request->spb_section,
-            'spb_pic_gmi' => $request->spb_pic_gmi,
-            'spb_pic_ppa' => $request->spb_pic_ppa,
-            'spb_kode_unit' => $request->spb_kode_unit,
-            'spb_tipe_unit' => $request->spb_tipe_unit,
-            'spb_brand' => $request->spb_brand,
-            'spb_hm' => $request->spb_hm,
-            'spb_problem_remark' => $request->spb_problem_remark,
+            $spb = SpbModel::create([
+                'spb_tanggal'        => $request->spb_tanggal,
+                'spb_no'             => $request->spb_no,
+                'spb_no_wo'          => $request->spb_no_wo,
+                'spb_section'        => $request->spb_section,
+                'spb_pic_gmi'        => $request->spb_pic_gmi,
+                'spb_pic_ppa'        => $request->spb_pic_ppa,
+                'spb_kode_unit'      => $request->spb_kode_unit,
+                'spb_tipe_unit'      => $request->spb_tipe_unit,
+                'spb_brand'          => $request->spb_brand,
+                'spb_hm'             => $request->spb_hm,
+                'spb_problem_remark' => $request->spb_problem_remark,
+                'spb_status'         => 'DONE QUOT',
+                'spb_gudang'  => $request->spb_gudang,
+                'spb_pic'  => $request->spb_pic,
+            ]);
+            foreach ($request->details as $item) {
 
-            'part_id' => $part->part_id,
-            'spb_part_number' => $part->part_number,
-            'spb_part_name' => $part->part_name,
-            'spb_qty' => $request->spb_qty,
-            'spb_uom' => $part->part_satuan,
+                $part = BarangModel::findOrFail($item['part_id']);
+                $stock = StockModel::where('part_id', $part->part_id)
+                ->where('stk_location', $request->spb_gudang)
+                ->lockForUpdate()
+                ->first();
 
-            'spb_status' => 'CREATED'
-        ]);
+                if (!$stock || $stock->stk_qty < $item['dtl_spb_qty']) {
+                    throw new \Exception(
+                        "Stok {$part->part_number} tidak mencukupi"
+                    );
+                }
 
-        return response()->json($spb, 201);
+                $stock->decrement('stk_qty', $item['dtl_spb_qty']);
+
+                SpbDetailModel::create([
+                    'spb_id'               => $spb->spb_id,
+                    'part_id'              => $part->part_id,
+                    'dtl_spb_part_number'  => $part->part_number,
+                    'dtl_spb_part_name'    => $part->part_name,
+                    'dtl_spb_part_satuan'  => $part->part_satuan,
+                    'dtl_spb_qty'          => $item['dtl_spb_qty']?? 0,
+                ]);
+            }
+        });
+
+        return response()->json([
+            'status' => true,
+            'message' => 'SPB berhasil dibuat',
+            'data' => $spb->load('details')
+        ], 201);
     }
 
+
     public function generateKodeSpb()
-{
-    $lokasiKode = 'TJE'; // nanti bisa ambil dari user
-    $tahun = now()->format('Y'); // 2026
-    $bulan = now()->format('m'); // 01
+    {
+        $lokasiKode = 'TJE'; 
+        $tahun = now()->format('Y'); 
+        $bulan = now()->format('m'); 
 
-    // ambil spb_id terakhir
-    $lastId = SpbModel::max('spb_id'); // null kalau belum ada
+        $lastId = SpbModel::max('spb_id');
 
-    $nextNumber = $lastId ? $lastId + 1 : 1;
+        $nextNumber = $lastId ? $lastId + 1 : 1;
 
-    $kode = "GMITJIE/{$tahun}/{$bulan}/{$nextNumber}";
+        $kode = "GMITJIE/{$tahun}/{$bulan}/{$nextNumber}";
 
-    return response()->json($kode);
-}
+        return response()->json($kode);
+    }
 
+    public function exportSpbExcel()
+    {
+        $data = DB::table('v_spb_report')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return Excel::download(
+            new SpbListExport($data),
+            'DAFTAR_SPB.xlsx'
+        );
+    }
+
+    public function printSpb($kode)
+    {
+        $spb = SpbModel::with('details')
+            ->where('spb_no', $kode)
+            ->firstOrFail();
+
+        $pdf = Pdf::loadView('exports.spb-pdf', [
+            'spb' => $spb
+        ])->setPaper('A4', 'potrait');
+
+        $filename = 'SPB-' . str_replace('/', '-', $spb->spb_no) . '.pdf';
+
+        return $pdf->stream($filename);
+    }
 }

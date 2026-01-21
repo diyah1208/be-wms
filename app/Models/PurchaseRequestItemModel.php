@@ -18,6 +18,8 @@ class PurchaseRequestItemModel extends Model
         'dtl_pr_part_name',
         'dtl_pr_satuan',
         'dtl_pr_qty',
+        'signature_url',
+        'sign_at',
     ];
 
     public function pr()

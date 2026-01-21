@@ -9,18 +9,18 @@ use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
 {
-    public function index()
-    {
-        // hanya user yang aktif
-        $users = UserModel::where('status', 'active')->latest()->get()->map(function ($user) {
-            return $this->formatUser($user);
-        });
+public function index()
+{
+    // ambil SEMUA user (active & inactive)
+    $users = UserModel::latest()->get()->map(function ($user) {
+        return $this->formatUser($user);
+    });
 
-        return response()->json([
-            'status' => true,
-            'data'   => $users
-        ]);
-    }
+    return response()->json([
+        'status' => true,
+        'data'   => $users
+    ]);
+}
 
     public function store(Request $request)
     {

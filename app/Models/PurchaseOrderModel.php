@@ -14,9 +14,15 @@ class PurchaseOrderModel extends Model
         'pr_id',
         'po_tanggal',
         'po_estimasi',
+        'po_detail_status',
         'po_keterangan',
         'po_status',
         'po_pic',
+        'dtl_po_harga',   // 🔥
+        'vendor_id',  
+        'signature_url',
+        'sign_at',
+        
     ];
 
     //FK

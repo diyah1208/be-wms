@@ -154,7 +154,6 @@ class DeliveryController extends Controller
         });
     }
 
-
     public function receive(Request $request, $kode)
     {
         $delivery = DeliveryModel::with(['details', 'mr.details'])
@@ -217,13 +216,17 @@ class DeliveryController extends Controller
                     ->where('part_id', $detail->part_id)
                     ->increment('dtl_mr_qty_received', $input['qty_received']);
             }
+
+            // ✅ UPDATE STATUS DELIVERY DI SINI
+            $delivery->update([
+                'dlv_status' => 'delivered',
+            ]);
         });
 
         return response()->json([
             'message' => 'Barang diterima, silakan TTD untuk menyelesaikan delivery',
         ]);
     }
-
 
     public function signPenerima(Request $request, $kode)
     {
@@ -235,7 +238,7 @@ class DeliveryController extends Controller
             ->where('dlv_kode', $kode)
             ->firstOrFail();
 
-        if ($delivery->dlv_status !== 'on delivery') {
+        if ($delivery->dlv_status !== 'delivered') {
             throw new Exception('Belum bisa TTD penerima');
         }
 
@@ -244,13 +247,11 @@ class DeliveryController extends Controller
         $delivery->update([
             'signed_penerima_sign' => $path,
             'signed_penerima_at'   => now(),
-            'dlv_status'           => 'delivered',
             'delivered_at'         => now(),
         ]);
 
         return response()->json([
             'message' => 'Delivery selesai',
-            'status'  => 'delivered',
         ]);
     }
 

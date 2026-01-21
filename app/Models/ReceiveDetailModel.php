@@ -16,6 +16,8 @@ class ReceiveDetailModel extends Model
         'dtl_ri_part_name',
         'dtl_ri_satuan',
         'dtl_ri_qty',
+              'signature_url',
+  'sign_at',
     ];
 
     public function barang()

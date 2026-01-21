@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\BarangController;
 use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\MaterialRequestController;
 //use App\Http\Controllers\Api\MaterialRequestItemController;
+// use App\Http\Controllers\Api\MaterialRequestItemController;
 use App\Http\Controllers\Api\PurchaseRequestController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\ReceiveController;
@@ -19,6 +20,8 @@ use App\Http\Controllers\Api\SpbController;
 use App\Http\Controllers\Api\SpbPoController;
 use App\Http\Controllers\Api\SpbDoController;
 use App\Http\Controllers\Api\SpbInvoiceController;
+use App\Http\Controllers\Api\VendorController;
+use App\Http\Controllers\Api\CustomerController;
 
 /*
 |--------------------------------------------------------------------------
@@ -26,17 +29,15 @@ use App\Http\Controllers\Api\SpbInvoiceController;
 |--------------------------------------------------------------------------
 */
 
-// ===== PASSWORD RESET =====
 Route::post('/forgot-password', [ForgotPasswordController::class, 'forgotPassword']);
 Route::post('/reset-password', [ForgotPasswordController::class, 'resetPassword']);
 
-// ===== AUTH =====
 Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/register', [AuthController::class, 'register']);
 });
 
-// ===== EMAIL VERIFICATION =====
+
 Route::get('/email/verify/{id}/{hash}', function ($id, $hash) {
     $user = UserModel::findOrFail($id);
 
@@ -52,16 +53,28 @@ Route::get('/email/verify/{id}/{hash}', function ($id, $hash) {
     return response()->json(['message' => 'Email verified successfully']);
 })->middleware('signed')->name('verification.verify');
 
+
 Route::middleware('api')->post('/mr/sign', [MaterialRequestController::class, 'sign']);
-Route::delete('/mr/{kode}/signature',[MaterialRequestController::class, 'clearSignature'])->where('kode', '.*');
-/*
-|--------------------------------------------------------------------------
-| AUTHENTICATED ROUTES
-|--------------------------------------------------------------------------
-*/
+Route::delete(
+    '/mr/{kode}/signature',
+    [MaterialRequestController::class, 'clearSignature']
+)->where('kode', '.*');
+
+Route::middleware('api')->post('/pr/sign', [PurchaseRequestController::class, 'sign']);
+Route::delete(
+    '/pr/{kode}/signature',
+    [PurchaseRequestController::class, 'clearSignature']
+)->where('kode', '.*');
+
+Route::middleware('api')->post('/po/sign', [PurchaseOrderController::class, 'sign']);
+Route::delete(
+    '/po/{kode}/signature',
+    [PurchaseOrderController::class, 'clearSignature']
+)->where('kode', '.*');
+
 Route::middleware('auth:sanctum')->group(function () {
 
-    // ===== AUTH =====
+
     Route::prefix('auth')->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
         Route::post('/logout', [AuthController::class, 'logout']);
@@ -69,7 +82,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/resend-verification', [AuthController::class, 'resendVerification']);
     });
 
-    // ===== USERS =====
     Route::prefix('users')->group(function () {
         Route::get('/', [UserController::class, 'index']);
         Route::post('/', [UserController::class, 'store']);
@@ -105,6 +117,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [MaterialRequestController::class, 'show']);
         Route::put('/{id}', [MaterialRequestController::class, 'update']);
         Route::delete('/{id}', [MaterialRequestController::class, 'destroy']);
+
+        // // MR ITEMS
+        // Route::get('/{mr_id}/items', [MaterialRequestItemController::class, 'index']);
+        // Route::post('/{mr_id}/items', [MaterialRequestItemController::class, 'store']);
+        // Route::put('/items/{item_id}', [MaterialRequestItemController::class, 'update']);
+        // Route::delete('/items/{item_id}', [MaterialRequestItemController::class, 'destroy']);
+
+
     });
 
     // ===== PURCHASE REQUEST (PR) =====
@@ -174,6 +194,23 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/print/{kode}', [SpbController::class, 'printSpb'])->where('kode', '.*');
     });
 
+Route::prefix('vendors')->group(function () {
+    Route::get('/', [VendorController::class, 'index']);        // READ
+    Route::get('{id}', [VendorController::class, 'show']);      // READ detail
+    Route::post('/', [VendorController::class, 'store']);       // CREATE
+    Route::put('{id}', [VendorController::class, 'update']);    // UPDATE
+    Route::delete('{id}', [VendorController::class, 'destroy']); // DELETE
+    Route::put('{id}/toggle', [VendorController::class, 'toggleStatus']); // suspend
+});
+Route::prefix('customers')->group(function () {
+    Route::get('/', [CustomerController::class, 'index']);
+    Route::post('/', [CustomerController::class, 'store']);
+    Route::put('/{id}', [CustomerController::class, 'update']);
+    Route::put('/{id}/toggle', [CustomerController::class, 'toggleStatus']);
+});
+
     // ===== DASHBOARD =====
     Route::get('/dashboard', [DashboardController::class, 'index']);
+
+
 });

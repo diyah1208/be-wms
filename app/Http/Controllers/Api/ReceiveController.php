@@ -86,7 +86,7 @@ class ReceiveController extends Controller
                 "ri_tanggal"    => $request->ri_tanggal,
                 "ri_keterangan" => $request->ri_keterangan,
                 "ri_pic"        => $request->ri_pic ?? auth()->user()->name,
-                "ri_status"     => "confirmed"
+                "ri_status"     => "confirmed",
             ]);
 
             foreach ($request->details as $item) {
@@ -125,6 +125,7 @@ class ReceiveController extends Controller
                         'qty_received' => $poDetail->qty_received + $item['dtl_ri_qty']
                     ]);
 
+                /* === UPDATE STOCK === */
                 $stock = StockModel::firstOrCreate(
                     [
                         "part_id" => $item['part_id'],
@@ -150,12 +151,23 @@ class ReceiveController extends Controller
             }
 
             $mrIds = collect($request->details)->pluck('mr_id')->unique();
+
             foreach ($mrIds as $mrId) {
-                $mr = MaterialRequestModel::with('details')->find($mrId);
+                $mr = MaterialRequestModel::with('details')->lockForUpdate()->findOrFail($mrId);
+
+                $totalRequest  = $mr->details->sum('dtl_mr_qty_request');
+                $totalReceived = $mr->details->sum('dtl_mr_qty_received');
+
+                if ($totalReceived <= 0) {
+                    $status = 'open';
+                } elseif ($totalReceived < $totalRequest) {
+                    $status = 'partial';
+                } else {
+                    $status = 'close';
+                }
+
                 $mr->update([
-                    "mr_status" => $mr->details->every(
-                        fn ($d) => $d->dtl_mr_qty_received >= $d->dtl_mr_qty_request
-                    ) ? "close" : "open"
+                    "mr_status" => $status
                 ]);
             }
 
@@ -176,6 +188,7 @@ class ReceiveController extends Controller
             "ri_kode" => $receive->ri_kode
         ]);
     }
+
 
     public function exportReceive()
     {

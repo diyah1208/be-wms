@@ -36,48 +36,63 @@ class DeliveryController extends Controller
         );
     }
 
-
     public function store(Request $request)
     {
         $request->validate([
             'dlv_kode'        => 'required|unique:tb_delivery,dlv_kode',
-            'mr_id'           => 'required',
+            'mr_id'           => 'required|exists:tb_material_request,mr_id',
             'dlv_dari_gudang' => 'required',
             'dlv_ke_gudang'   => 'required',
-            'dlv_pic'         => 'required',
+            'dlv_ekspedisi'   => 'required',
+            'dlv_tanggal'     => 'required|date',
             'details'         => 'required|array|min:1',
+
+            'details.*.part_id'   => 'required|exists:tb_barang,part_id',
+            'details.*.qty_kirim' => 'required|integer|min:1',
         ]);
 
         DB::transaction(function () use ($request) {
-
-            $delivery = DeliveryModel::create([
+            $delivery = DB::table('tb_delivery')->insertGetId([
                 'dlv_kode'        => $request->dlv_kode,
                 'mr_id'           => $request->mr_id,
                 'dlv_dari_gudang' => $request->dlv_dari_gudang,
                 'dlv_ke_gudang'   => $request->dlv_ke_gudang,
                 'dlv_ekspedisi'   => $request->dlv_ekspedisi,
-                'dlv_no_resi'     => $request->dlv_no_resi,
-                'dlv_jumlah_koli' => $request->dlv_jumlah_koli ?? 0,
-                'dlv_pic'         => $request->dlv_pic,
+                'dlv_tanggal'     => $request->dlv_tanggal,
                 'dlv_status'      => 'pending',
+                'created_at'      => now(),
+                'updated_at'      => now(),
             ]);
 
             foreach ($request->details as $item) {
-                DeliveryDetailModel::create([
-                    'dlv_id'              => $delivery->dlv_id,
-                    'part_id'             => $item['part_id'],
-                    'dtl_dlv_part_number' => $item['dtl_dlv_part_number'],
-                    'dtl_dlv_part_name'   => $item['dtl_dlv_part_name'],
-                    'dtl_dlv_satuan'      => $item['dtl_dlv_satuan'],
-                    'qty_pending'         => $item['qty_pending'],
-                    'qty_on_delivery'     => 0,
-                    'qty_delivered'       => 0,
-                    'receive_note'        => null,
+                $stock = DB::table('tb_stock')
+                    ->where('part_id', $item['part_id'])
+                    ->where('stk_location', $request->dlv_dari_gudang)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$stock || $stock->stk_qty < $item['qty_kirim']) {
+                    throw new \Exception('Stock tidak mencukupi');
+                }
+                DB::table('dtl_delivery')->insert([
+                    'dlv_id'    => $delivery,
+                    'part_id'   => $item['part_id'],
+                    'qty_kirim' => $item['qty_kirim'],
+                    'created_at'=> now(),
+                    'updated_at'=> now(),
                 ]);
+                DB::table('tb_stock')
+                    ->where('stk_id', $stock->stk_id)
+                    ->update([
+                        'stk_qty' => $stock->stk_qty - $item['qty_kirim']
+                    ]);
             }
         });
 
-        return response()->json(['message' => 'Delivery created']);
+        return response()->json([
+            'status'  => true,
+            'message' => 'Delivery berhasil dibuat',
+        ]);
     }
 
     public function updateStatus(Request $request, $kode)

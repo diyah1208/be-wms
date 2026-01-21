@@ -4,8 +4,17 @@ namespace App\Exports;
 
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
+use Maatwebsite\Excel\Concerns\WithStyles;
+use Maatwebsite\Excel\Concerns\ShouldAutoSize;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
 
-class StockListExport implements FromCollection, WithHeadings
+class StockListExport implements 
+    FromCollection, 
+    WithHeadings, 
+    WithStyles, 
+    ShouldAutoSize
 {
     protected $stocks;
 
@@ -23,7 +32,7 @@ class StockListExport implements FromCollection, WithHeadings
 
                 $barang = $rows->first()->barang;
 
-                $get = fn($lokasi) =>
+                $get = fn ($lokasi) =>
                     (int) $rows->where('stk_location', $lokasi)->sum('stk_qty');
 
                 $balikpapan = $get('BALIKPAPAN');
@@ -37,24 +46,25 @@ class StockListExport implements FromCollection, WithHeadings
                 $tal        = $get('SITE TAL');
                 $tanjung    = $get('MUARA ENIM');
 
-                $sum = $balikpapan + $jakarta + $ami + $ba + $bib + $mifa + $mip + $tabang + $tal + $tanjung;
+                $sum = $balikpapan + $jakarta + $ami + $ba + $bib
+                     + $mifa + $mip + $tabang + $tal + $tanjung;
 
                 return [
-                    $i + 1,
-                    $barang->part_number,
-                    $barang->part_name,
-                    $barang->part_satuan,
-                    $balikpapan,
-                    $jakarta,
-                    $ami,
-                    $ba,
-                    $bib,
-                    $mifa,
-                    $mip,
-                    $tabang,
-                    $tal,
-                    $tanjung,
-                    $sum,
+                    'no'          => $i + 1,
+                    'part_number' => $barang->part_number,
+                    'part_name'   => $barang->part_name,
+                    'satuan'      => $barang->part_satuan,
+                    'balikpapan'  => $balikpapan,
+                    'jakarta'     => $jakarta,
+                    'ami'         => $ami,
+                    'ba'          => $ba,
+                    'bib'         => $bib,
+                    'mifa'        => $mifa,
+                    'mip'         => $mip,
+                    'tabang'      => $tabang,
+                    'tal'         => $tal,
+                    'tanjung'     => $tanjung,
+                    'sum'         => $sum,
                 ];
             });
     }
@@ -76,7 +86,50 @@ class StockListExport implements FromCollection, WithHeadings
             'SITE TABANG',
             'SITE TAL',
             'MUARA ENIM',
-            'SUM',
+            'TOTAL',
+        ];
+    }
+
+    public function styles(Worksheet $sheet)
+    {
+        $lastRow    = $sheet->getHighestRow();
+        $lastColumn = $sheet->getHighestColumn();
+
+        return [
+            // HEADER
+            1 => [
+                'font' => [
+                    'bold' => true,
+                ],
+                'alignment' => [
+                    'horizontal' => Alignment::HORIZONTAL_CENTER,
+                    'vertical'   => Alignment::VERTICAL_CENTER,
+                ],
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => Border::BORDER_THIN,
+                    ],
+                ],
+            ],
+
+            // BODY
+            "A2:{$lastColumn}{$lastRow}" => [
+                'alignment' => [
+                    'vertical' => Alignment::VERTICAL_CENTER,
+                ],
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => Border::BORDER_THIN,
+                    ],
+                ],
+            ],
+
+            // ANGKA (kolom stok & total rata kanan)
+            "E2:{$lastColumn}{$lastRow}" => [
+                'alignment' => [
+                    'horizontal' => Alignment::HORIZONTAL_RIGHT,
+                ],
+            ],
         ];
     }
 }

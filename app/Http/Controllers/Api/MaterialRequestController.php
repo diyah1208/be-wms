@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -32,6 +33,22 @@ class MaterialRequestController extends Controller
     {
         return $this->lokasiKodeMap[strtoupper($lokasi)] ?? 'UNK';
     }
+
+public function exportPdf(string $kode)
+{
+    $mr = MaterialRequestModel::with(['details'])
+        ->where('mr_kode', $kode)
+        ->firstOrFail();
+
+    $pdf = Pdf::loadView(
+        'exports.mr-pdf',
+        compact('mr')
+    )->setPaper('A4', 'portrait');
+
+    return $pdf->download(
+        'MR_' . str_replace('/', '_', $mr->mr_kode) . '.pdf'
+    );
+}
 
     public function index()
     {

@@ -195,4 +195,19 @@ public function clearSignature(string $kode): JsonResponse
     }
 }
 
+public function exportPdf(string $kode)
+{
+    $pr = PurchaseRequestModel::with(['details'])
+        ->where('pr_kode', $kode)
+        ->firstOrFail();
+
+    $pdf = Pdf::loadView(
+        'exports.pr-pdf',
+        compact('pr')
+    )->setPaper('A4', 'portrait');
+
+    return $pdf->download(
+        'PR_' . str_replace('/', '_', $pr->pr_kode) . '.pdf'
+    );
+}
 }

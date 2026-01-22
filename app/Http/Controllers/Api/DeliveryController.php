@@ -8,21 +8,24 @@ use App\Models\DeliveryDetailModel;
 use App\Models\MaterialRequestModel;
 use App\Models\MaterialRequestItemModel;
 use App\Models\StockModel;
+use App\Models\BarangModel;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Maatwebsite\Excel\Facades\Excel;
-use App\Exports\DeliveryListExport;
 
 class DeliveryController extends Controller
 {
+    /* =======================================================
+     * LIST & DETAIL
+     * ======================================================= */
+
     public function index()
     {
         return response()->json(
-            DeliveryModel::with(['details', 'mr.details'])
-                ->orderBy('dlv_kode', 'desc')
+            DeliveryModel::with(['details', 'mr'])
+                ->orderByDesc('dlv_kode')
                 ->get()
         );
     }
@@ -36,6 +39,10 @@ class DeliveryController extends Controller
         );
     }
 
+    /* =======================================================
+     * CREATE DELIVERY
+     * ======================================================= */
+
     public function store(Request $request)
     {
         $request->validate([
@@ -44,56 +51,64 @@ class DeliveryController extends Controller
             'dlv_dari_gudang' => 'required',
             'dlv_ke_gudang'   => 'required',
             'dlv_ekspedisi'   => 'required',
-            'dlv_tanggal'     => 'required|date',
+            'dlv_pic'         => 'required',
             'details'         => 'required|array|min:1',
-
-            'details.*.part_id'   => 'required|exists:tb_barang,part_id',
-            'details.*.qty_kirim' => 'required|integer|min:1',
+            'details.*.part_id' => 'required|exists:tb_barang,part_id',
+            'details.*.qty_pending' => 'required|integer|min:1',
         ]);
 
         DB::transaction(function () use ($request) {
-            $delivery = DB::table('tb_delivery')->insertGetId([
+
+            $delivery = DeliveryModel::create([
                 'dlv_kode'        => $request->dlv_kode,
                 'mr_id'           => $request->mr_id,
                 'dlv_dari_gudang' => $request->dlv_dari_gudang,
                 'dlv_ke_gudang'   => $request->dlv_ke_gudang,
                 'dlv_ekspedisi'   => $request->dlv_ekspedisi,
-                'dlv_tanggal'     => $request->dlv_tanggal,
+                'dlv_pic'         => $request->dlv_pic,
                 'dlv_status'      => 'pending',
-                'created_at'      => now(),
-                'updated_at'      => now(),
             ]);
 
             foreach ($request->details as $item) {
-                $stock = DB::table('tb_stock')
-                    ->where('part_id', $item['part_id'])
-                    ->where('stk_location', $request->dlv_dari_gudang)
-                    ->lockForUpdate()
-                    ->first();
 
-                if (!$stock || $stock->stk_qty < $item['qty_kirim']) {
-                    throw new \Exception('Stock tidak mencukupi');
+                $barang = BarangModel::findOrFail($item['part_id']);
+
+                $mrDetail = MaterialRequestItemModel::where('mr_id', $request->mr_id)
+                    ->where('part_id', $item['part_id'])
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                $sisaMr = $mrDetail->dtl_mr_qty_request - $mrDetail->dtl_mr_qty_received;
+
+                if ($item['qty_pending'] > $sisaMr) {
+                    throw new Exception(
+                        "Qty delivery melebihi sisa MR ({$barang->part_number})"
+                    );
                 }
-                DB::table('dtl_delivery')->insert([
-                    'dlv_id'    => $delivery,
-                    'part_id'   => $item['part_id'],
-                    'qty_kirim' => $item['qty_kirim'],
-                    'created_at'=> now(),
-                    'updated_at'=> now(),
+
+                DeliveryDetailModel::create([
+                    'dlv_id'              => $delivery->dlv_id,
+                    'part_id'             => $item['part_id'],
+                    'dtl_dlv_part_number' => $item['dtl_dlv_part_number'],
+                    'dtl_dlv_part_name'   => $item['dtl_dlv_part_name'],
+                    'dtl_dlv_satuan'      => $item['dtl_dlv_satuan'],
+                    'qty_pending'         => $item['qty_pending'],
+                    'qty_on_delivery'     => 0,
+                    'qty_delivered'       => 0,
+                    'receive_note'        => null,
                 ]);
-                DB::table('tb_stock')
-                    ->where('stk_id', $stock->stk_id)
-                    ->update([
-                        'stk_qty' => $stock->stk_qty - $item['qty_kirim']
-                    ]);
             }
         });
 
         return response()->json([
-            'status'  => true,
+            'status' => true,
             'message' => 'Delivery berhasil dibuat',
         ]);
     }
+
+    /* =======================================================
+     * UPDATE STATUS DELIVERY
+     * ======================================================= */
 
     public function updateStatus(Request $request, $kode)
     {
@@ -102,13 +117,14 @@ class DeliveryController extends Controller
             ->firstOrFail();
 
         $request->validate([
-            'status' => 'required|in:packing,ready to pickup,on delivery',
+            'status' => 'required|in:packing,ready to pickup,on delivery,delivered',
         ]);
 
         $allowed = [
-            'pending'          => ['packing'],
-            'packing'          => ['ready to pickup'],
-            'ready to pickup'  => ['on delivery'],
+            'pending'         => ['packing'],
+            'packing'         => ['ready to pickup', 'delivered'],
+            'ready to pickup' => ['on delivery'],
+            'on delivery'     => ['delivered'],
         ];
 
         if (!in_array($request->status, $allowed[$delivery->dlv_status] ?? [])) {
@@ -117,17 +133,6 @@ class DeliveryController extends Controller
 
         if ($request->status === 'packing') {
             $this->moveToPacking($delivery);
-
-            $delivery->update([
-                'packing_at' => now(),
-                'packing_by' => auth()->user()->name ?? $delivery->dlv_pic,
-            ]);
-        }
-
-        if ($request->status === 'on delivery') {
-            $delivery->update([
-                'on_delivery_at' => now(),
-            ]);
         }
 
         $delivery->update([
@@ -135,31 +140,34 @@ class DeliveryController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'Status updated',
-            'status'  => $request->status,
+            'message' => 'Status delivery diperbarui',
         ]);
     }
 
+    /* =======================================================
+     * PACKING → PINDAH KE ON DELIVERY
+     * ======================================================= */
 
     private function moveToPacking($delivery)
     {
         DB::transaction(function () use ($delivery) {
+
             foreach ($delivery->details as $item) {
 
                 if ($item->qty_pending <= 0) continue;
 
-                $origin = StockModel::where('part_id', $item->part_id)
+                $stock = StockModel::where('part_id', $item->part_id)
                     ->where('stk_location', $delivery->dlv_dari_gudang)
                     ->lockForUpdate()
                     ->firstOrFail();
 
-                if ($origin->stk_qty < $item->qty_pending) {
+                if ($stock->stk_qty < $item->qty_pending) {
                     throw new Exception(
-                        "Stok kurang untuk part {$item->dtl_dlv_part_number}"
+                        "Stock tidak mencukupi ({$item->dtl_dlv_part_number})"
                     );
                 }
 
-                $origin->decrement('stk_qty', $item->qty_pending);
+                $stock->decrement('stk_qty', $item->qty_pending);
 
                 $item->update([
                     'qty_on_delivery' => $item->qty_pending,
@@ -169,21 +177,34 @@ class DeliveryController extends Controller
         });
     }
 
+    /* =======================================================
+     * RECEIVE DELIVERY (NORMAL & HAND CARRY)
+     * ======================================================= */
+
     public function receive(Request $request, $kode)
     {
         $delivery = DeliveryModel::with(['details', 'mr.details'])
             ->where('dlv_kode', $kode)
             ->firstOrFail();
 
-        if ($delivery->dlv_status !== 'on delivery') {
-            throw new Exception('Delivery belum dalam proses pengiriman');
+        $isHandCarry = strtolower($delivery->dlv_ekspedisi) === 'hand carry';
+
+        if (
+            (!$isHandCarry && $delivery->dlv_status !== 'on delivery') ||
+            ($isHandCarry && $delivery->dlv_status !== 'packing')
+        ) {
+            throw new Exception(
+                $isHandCarry
+                    ? 'Hand carry belum selesai packing'
+                    : 'Delivery belum on delivery'
+            );
         }
 
         $request->validate([
             'items' => 'required|array|min:1',
             'items.*.part_id' => 'required|integer',
             'items.*.qty_received' => 'required|integer|min:0',
-            'items.*.receive_note' => 'nullable|string|max:255',
+            'items.*.receive_note' => 'nullable|string',
         ]);
 
         DB::transaction(function () use ($request, $delivery) {
@@ -201,15 +222,6 @@ class DeliveryController extends Controller
                     );
                 }
 
-                if (
-                    $input['qty_received'] < $detail->qty_on_delivery &&
-                    empty($input['receive_note'])
-                ) {
-                    throw new Exception(
-                        "Keterangan wajib diisi untuk penerimaan sebagian ({$detail->dtl_dlv_part_number})"
-                    );
-                }
-
                 $detail->update([
                     'qty_delivered'   => $input['qty_received'],
                     'qty_pending'     => $detail->qty_on_delivery - $input['qty_received'],
@@ -219,7 +231,7 @@ class DeliveryController extends Controller
 
                 $stock = StockModel::firstOrCreate(
                     [
-                        'part_id'      => $detail->part_id,
+                        'part_id' => $detail->part_id,
                         'stk_location' => $delivery->dlv_ke_gudang,
                     ],
                     ['stk_qty' => 0]
@@ -232,17 +244,30 @@ class DeliveryController extends Controller
                     ->increment('dtl_mr_qty_received', $input['qty_received']);
             }
 
-            // ✅ UPDATE STATUS DELIVERY DI SINI
+            /* UPDATE STATUS MR */
+            $mr = MaterialRequestModel::with('details')
+                ->lockForUpdate()
+                ->findOrFail($delivery->mr_id);
+
+            $totalRequest  = $mr->details->sum('dtl_mr_qty_request');
+            $totalReceived = $mr->details->sum('dtl_mr_qty_received');
+
+            $mr->update([
+                'mr_status' =>
+                    $totalReceived <= 0 ? 'open'
+                    : ($totalReceived < $totalRequest ? 'partial' : 'close')
+            ]);
             $delivery->update([
-                'dlv_status' => 'delivered',
+                'dlv_status'   => 'delivered',
+                'delivered_at'=> now(),
             ]);
         });
 
         return response()->json([
-            'message' => 'Barang diterima, silakan TTD untuk menyelesaikan delivery',
+            'message' => 'Barang berhasil diterima',
+            'dlv_status'   => 'delivered',
         ]);
     }
-
     public function signPenerima(Request $request, $kode)
     {
         $request->validate([

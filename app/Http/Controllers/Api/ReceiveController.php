@@ -100,7 +100,7 @@ class ReceiveController extends Controller
                     throw new \Exception("Detail PO tidak ditemukan");
                 }
 
-                $sisaPo = $poDetail->qty_order - $poDetail->qty_received;
+                $sisaPo = $poDetail->dtl_po_qty - $poDetail->dtl_qty_received;
 
                 if ($item['dtl_ri_qty'] > $sisaPo) {
                     throw new \Exception(
@@ -122,7 +122,7 @@ class ReceiveController extends Controller
                     ->where('po_id', $request->po_id)
                     ->where('part_id', $item['part_id'])
                     ->update([
-                        'qty_received' => $poDetail->qty_received + $item['dtl_ri_qty']
+                        'dtl_qty_received' => $poDetail->dtl_qty_received + $item['dtl_ri_qty']
                     ]);
 
                 /* === UPDATE STOCK === */
@@ -173,7 +173,7 @@ class ReceiveController extends Controller
 
             $poHasSisa = DB::table('dtl_purchase_order')
                 ->where('po_id', $request->po_id)
-                ->whereRaw('qty_received < qty_order')
+                ->whereRaw('dtl_qty_received < dtl_po_qty')
                 ->exists();
 
             PurchaseOrderModel::where("po_id", $request->po_id)->update([

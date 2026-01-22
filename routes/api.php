@@ -8,8 +8,6 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\BarangController;
 use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\MaterialRequestController;
-//use App\Http\Controllers\Api\MaterialRequestItemController;
-// use App\Http\Controllers\Api\MaterialRequestItemController;
 use App\Http\Controllers\Api\PurchaseRequestController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\ReceiveController;
@@ -22,6 +20,7 @@ use App\Http\Controllers\Api\SpbDoController;
 use App\Http\Controllers\Api\SpbInvoiceController;
 use App\Http\Controllers\Api\VendorController;
 use App\Http\Controllers\Api\CustomerController;
+use App\Http\Middleware\CheckInputOpen;
 
 /*
 |--------------------------------------------------------------------------
@@ -36,7 +35,6 @@ Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/register', [AuthController::class, 'register']);
 });
-
 
 Route::get('/email/verify/{id}/{hash}', function ($id, $hash) {
     $user = UserModel::findOrFail($id);
@@ -72,145 +70,173 @@ Route::delete(
     [PurchaseOrderController::class, 'clearSignature']
 )->where('kode', '.*');
 
+/*
+|--------------------------------------------------------------------------
+| READ ONLY (GET) — SELALU BOLEH
+|--------------------------------------------------------------------------
+*/
+
 Route::middleware('auth:sanctum')->group(function () {
 
+    // AUTH
+    Route::get('/auth/me', [AuthController::class, 'me']);
+    Route::get('/auth/email-verified', [AuthController::class, 'emailVerified']);
 
-    Route::prefix('auth')->group(function () {
-        Route::get('/me', [AuthController::class, 'me']);
-        Route::post('/logout', [AuthController::class, 'logout']);
-        Route::get('/email-verified', [AuthController::class, 'emailVerified']);
-        Route::post('/resend-verification', [AuthController::class, 'resendVerification']);
-    });
+    // USERS
+    Route::get('/users', [UserController::class, 'index']);
+    Route::get('/users/{id}', [UserController::class, 'show']);
 
-    Route::prefix('users')->group(function () {
-        Route::get('/', [UserController::class, 'index']);
-        Route::post('/', [UserController::class, 'store']);
-        Route::get('/{id}', [UserController::class, 'show']);
-        Route::put('/{id}', [UserController::class, 'update']);
-        Route::delete('/{id}', [UserController::class, 'destroy']);
-        Route::put('/{id}/status', [UserController::class, 'updateStatus']);
-    });
+    // BARANG
+    Route::get('/barang', [BarangController::class, 'index']);
+    Route::get('/barang/{id}', [BarangController::class, 'show']);
+    Route::get('/barang/export-excel', [BarangController::class, 'exportBarang']);
 
-    // ===== BARANG =====
-    Route::prefix('barang')->group(function () {
-        Route::get('/', [BarangController::class, 'index']);
-        Route::get('/export-excel', [BarangController::class, 'exportBarang']);
-        Route::post('/', [BarangController::class, 'store']);
-        Route::get('/{id}', [BarangController::class, 'show']);
-        Route::put('/{id}', [BarangController::class, 'update']);
-    });
+    // STOCK
+    Route::get('/stock', [StockController::class, 'index']);
+    Route::get('/stock/export-excel', [StockController::class, 'exportStock']);
 
-    // ===== STOCK =====
-    Route::prefix('stock')->group(function () {
-        Route::get('/', [StockController::class, 'index']);
-        Route::post('/', [StockController::class, 'store']);
-        Route::get('/export-excel', [StockController::class, 'exportStock']);
-    });
+    // MATERIAL REQUEST
+    Route::get('/mr', [MaterialRequestController::class, 'index']);
+    Route::get('/mr/open', [MaterialRequestController::class, 'getOpenMR']);
+    Route::get('/mr/generate-kode', [MaterialRequestController::class, 'generateKode']);
+    Route::get('/mr/kode/{kode}', [MaterialRequestController::class, 'showKode'])->where('kode', '.*');
+    Route::get('/mr/{id}', [MaterialRequestController::class, 'show']);
+    Route::get('/mr/{kode}/export/pdf', [MaterialRequestController::class,'exportPdf'])->where('kode', '.*');
 
-    // ===== MATERIAL REQUEST (MR) =====
-    Route::prefix('mr')->group(function () {
-        Route::get('/', [MaterialRequestController::class, 'index']);
-        Route::post('/', [MaterialRequestController::class, 'store']);
-        Route::get('/generate-kode', [MaterialRequestController::class, 'generateKode']);
-        Route::get('/open', [MaterialRequestController::class, 'getOpenMR']);
-        Route::get('/kode/{kode}', [MaterialRequestController::class, 'showKode'])->where('kode', '.*');
-        Route::get('/{id}', [MaterialRequestController::class, 'show']);
-        Route::put('/{id}', [MaterialRequestController::class, 'update']);
-        Route::delete('/{id}', [MaterialRequestController::class, 'destroy']);
+    // PURCHASE REQUEST
+    Route::get('/pr', [PurchaseRequestController::class, 'index']);
+    Route::get('/pr/open', [PurchaseOrderController::class, 'getPrOpen']);
+    Route::get('/pr/kode/{kode}', [PurchaseRequestController::class, 'showKode'])->where('kode', '.*');
+    Route::get('/pr/{id}', [PurchaseRequestController::class, 'show']);
+     Route::get('{kode}/export/pdf', [PurchaseRequestController::class,'exportPdf'])->where('kode', '.*');
 
-        // // MR ITEMS
-        // Route::get('/{mr_id}/items', [MaterialRequestItemController::class, 'index']);
-        // Route::post('/{mr_id}/items', [MaterialRequestItemController::class, 'store']);
-        // Route::put('/items/{item_id}', [MaterialRequestItemController::class, 'update']);
-        // Route::delete('/items/{item_id}', [MaterialRequestItemController::class, 'destroy']);
+    // PURCHASE ORDER
+    Route::get('{kode}/export/pdf', [PurchaseOrderController::class,'exportPdf']);
+    Route::get('/po', [PurchaseOrderController::class, 'index']);
+    Route::get('/po/kode/{kode}', [PurchaseOrderController::class, 'showKode'])->where('kode', '.*');
+    Route::get('/po/{id}', [PurchaseOrderController::class, 'show']);
+    
 
+    // RECEIVE
+    Route::get('/receive', [ReceiveController::class, 'index']);
+    Route::get('/receive/history', [ReceiveController::class, 'history']);
+    Route::get('/receive/purchase-orders', [ReceiveController::class, 'getPoPurchased']);
+    Route::get('/receive/kode/{kode}', [ReceiveController::class, 'showByKode'])->where('kode', '.*');
+    Route::get('/receive/export-excel', [ReceiveController::class, 'exportReceive']);
+    Route::get('/receive/{kode}/export/pdf', [ReceiveController::class, 'exportPdf']);
 
-    });
+    // DELIVERY
+    Route::get('/deliveries', [DeliveryController::class, 'index']);
+    Route::get('/deliveries/kode/{kode}', [DeliveryController::class, 'showKode']);
+    Route::get('/deliveries/export-excel', [DeliveryController::class, 'exportDeliveryHeader']);
+    Route::get('/deliveries/{kode}/export/pdf', [DeliveryController::class, 'exportPdf']);
 
-    // ===== PURCHASE REQUEST (PR) =====
-    Route::prefix('pr')->group(function () {
-        Route::get('/', [PurchaseRequestController::class, 'index']);
-        Route::post('/', [PurchaseRequestController::class, 'store']);
-        Route::get('/kode/{kode}', [PurchaseRequestController::class, 'showKode'])->where('kode', '.*');
-        Route::get('/open', [PurchaseOrderController::class, 'getPrOpen']);
-        Route::get('/{id}', [PurchaseRequestController::class, 'show']);
-        Route::put('/{id}', [PurchaseRequestController::class, 'update']);
-        Route::delete('/{id}', [PurchaseRequestController::class, 'destroy']);
-        Route::get('/pr/{kode}', [PurchaseRequestController::class, 'show']);
-        
-    });
+    // SPB
+    Route::get('/spb/generate-kode', [SpbController::class, 'generateKodeSpb']);
+    Route::get('/spb', [SpbController::class, 'index']);
+    Route::get('/spb/po', [SpbPoController::class, 'index']);
+    Route::get('/spb/do', [SpbDoController::class, 'index']);
+    Route::get('/spb/invoice', [SpbInvoiceController::class, 'index']);
+    Route::get('/spb/report', [SpbController::class, 'view']);
+    Route::get('/spb/kode/{kode}', [SpbController::class, 'showKode'])->where('kode', '.*');
+    Route::get('/spb/export-excel', [SpbController::class, 'exportSpbExcel']);
+    Route::get('/spb/print/{kode}', [SpbController::class, 'printSpb'])->where('kode', '.*');
 
-    // ===== PURCHASE ORDER (PO) =====
-    Route::prefix('po')->group(function () {
-        Route::get('/', [PurchaseOrderController::class, 'index']);
-        Route::post('/', [PurchaseOrderController::class, 'store']);
-        Route::get('/kode/{kode}', [PurchaseOrderController::class, 'showKode'])->where('kode', '.*');
-        Route::get('/{id}', [PurchaseOrderController::class, 'show']);
-        Route::put('/{id}', [PurchaseOrderController::class, 'update']);
-        Route::delete('/{id}', [PurchaseOrderController::class, 'destroy']);
-    });
+    // VENDOR
+    Route::get('/vendors', [VendorController::class, 'index']);
+    Route::get('/vendors/{id}', [VendorController::class, 'show']);
 
-    // ===== RECEIVE =====
-    Route::prefix('receive')->group(function () {
-        Route::get('/', [ReceiveController::class, 'index']);
-        Route::post('/', [ReceiveController::class, 'store']);
-        Route::get('/history', [ReceiveController::class, 'history']);
-        Route::get('/purchase-orders', [ReceiveController::class, 'getPoPurchased']);
-        Route::get('/kode/{kode}', [ReceiveController::class, 'showByKode'])->where('kode', '.*');
-        Route::get('/export-excel', [ReceiveController::class, 'exportReceive']);
-        Route::get('/{kode}/export/pdf',[ReceiveController::class, 'exportPdf']);
-        Route::post('/{kode}/sign-penerima', [ReceiveController::class, 'signPenerima']);
-    });
+    // CUSTOMER
+    Route::get('/customers', [CustomerController::class, 'index']);
 
-    // ===== DELIVERY =====
-    Route::prefix('deliveries')->group(function () {
-        Route::get('/', [DeliveryController::class, 'index']);
-        Route::post('/', [DeliveryController::class, 'store']);
-        //Route::get('/{id}', [DeliveryController::class, 'show']);
-        Route::get('/kode/{kode}', [DeliveryController::class, 'showKode']);
-        Route::put('/kode/{kode}', [DeliveryController::class, 'update']);
-        Route::patch('/kode/{kode}/status', [DeliveryController::class, 'updateStatus']);
-        Route::patch('/kode/{kode}/pickup-plan', [DeliveryController::class, 'updatePickupPlan']);
-        Route::post('/{kode}/receive', [DeliveryController::class, 'receive']);
-        Route::get('/{kode}/export/pdf',[DeliveryController::class, 'exportPdf']);
-        Route::post('/confirm-item', [ReceiveController::class, 'confirmItem']);
-        Route::get('/export-excel', [DeliveryController::class, 'exportDeliveryHeader']);
-        Route::post('/{kode}/sign-penerima', [DeliveryController::class, 'signPenerima']);
-    });
-
-    Route::prefix('spb')->group(function () {
-        Route::get('/', [SpbController::class, 'index']);
-        Route::get('/report', [SpbController::class, 'view']);
-        Route::post('/', [SpbController::class, 'store']);
-        Route::get('/generate-kode', [SpbController::class, 'generateKodeSpb']);
-        Route::get('/po', [SpbPoController::class, 'index']);
-        Route::post('/po', [SpbPoController::class, 'store']);
-        Route::get('/do', [SpbDoController::class, 'index']);
-        Route::post('/do', [SpbDoController::class, 'store']);
-        Route::get('/invoice', [SpbInvoiceController::class, 'index']);
-        Route::post('/invoice', [SpbInvoiceController::class, 'store']);
-        Route::get('/kode/{kode}', [SpbController::class, 'showKode'])->where('kode', '.*');
-        Route::get('/export-excel', [SpbController::class, 'exportSpbExcel']);
-        Route::get('/print/{kode}', [SpbController::class, 'printSpb'])->where('kode', '.*');
-    });
-
-Route::prefix('vendors')->group(function () {
-    Route::get('/', [VendorController::class, 'index']);        // READ
-    Route::get('{id}', [VendorController::class, 'show']);      // READ detail
-    Route::post('/', [VendorController::class, 'store']);       // CREATE
-    Route::put('{id}', [VendorController::class, 'update']);    // UPDATE
-    Route::delete('{id}', [VendorController::class, 'destroy']); // DELETE
-    Route::put('{id}/toggle', [VendorController::class, 'toggleStatus']); // suspend
-});
-Route::prefix('customers')->group(function () {
-    Route::get('/', [CustomerController::class, 'index']);
-    Route::post('/', [CustomerController::class, 'store']);
-    Route::put('/{id}', [CustomerController::class, 'update']);
-    Route::put('/{id}/toggle', [CustomerController::class, 'toggleStatus']);
-});
-
-    // ===== DASHBOARD =====
+    // DASHBOARD
     Route::get('/dashboard', [DashboardController::class, 'index']);
+});
 
+/*
+|--------------------------------------------------------------------------
+| WRITE (POST / PUT / DELETE) — DITUTUP TANGGAL 5
+|--------------------------------------------------------------------------
+*/
 
+Route::middleware(['auth:sanctum', CheckInputOpen::class])->group(function () {
+
+    // AUTH
+    Route::post('/auth/logout', [AuthController::class, 'logout']);
+    Route::post('/auth/resend-verification', [AuthController::class, 'resendVerification']);
+
+    // USERS
+    Route::post('/users', [UserController::class, 'store']);
+    Route::put('/users/{id}', [UserController::class, 'update']);
+    Route::delete('/users/{id}', [UserController::class, 'destroy']);
+    Route::put('/users/{id}/status', [UserController::class, 'updateStatus']);
+
+    // BARANG
+    Route::post('/barang', [BarangController::class, 'store']);
+    Route::put('/barang/{id}', [BarangController::class, 'update']);
+
+    // STOCK
+    Route::post('/stock', [StockController::class, 'store']);
+
+    // MR
+    Route::post('/mr', [MaterialRequestController::class, 'store']);
+    Route::put('/mr/{id}', [MaterialRequestController::class, 'update']);
+    Route::delete('/mr/{id}', [MaterialRequestController::class, 'destroy']);
+
+    // PR
+    Route::post('/pr', [PurchaseRequestController::class, 'store']);
+    Route::put('/pr/{id}', [PurchaseRequestController::class, 'update']);
+    Route::delete('/pr/{id}', [PurchaseRequestController::class, 'destroy']);
+
+    // PO
+    Route::post('/po', [PurchaseOrderController::class, 'store']);
+    Route::put('/po/{id}', [PurchaseOrderController::class, 'update']);
+    Route::delete('/po/{id}', [PurchaseOrderController::class, 'destroy']);
+
+    // RECEIVE
+    Route::post('/receive', [ReceiveController::class, 'store']);
+    Route::post('/receive/{kode}/sign-penerima', [ReceiveController::class, 'signPenerima']);
+
+    // DELIVERY
+    Route::post('/deliveries', [DeliveryController::class, 'store']);
+    Route::put('/deliveries/kode/{kode}', [DeliveryController::class, 'update']);
+    Route::patch('/deliveries/kode/{kode}/status', [DeliveryController::class, 'updateStatus']);
+    Route::patch('/deliveries/kode/{kode}/pickup-plan', [DeliveryController::class, 'updatePickupPlan']);
+    Route::post('/deliveries/{kode}/receive', [DeliveryController::class, 'receive']);
+    Route::post('/deliveries/{kode}/sign-penerima', [DeliveryController::class, 'signPenerima']);
+
+    // SPB
+    Route::post('/spb', [SpbController::class, 'store']);
+    Route::post('/spb/po', [SpbPoController::class, 'store']);
+    Route::post('/spb/do', [SpbDoController::class, 'store']);
+    Route::post('/spb/invoice', [SpbInvoiceController::class, 'store']);
+    
+
+    // VENDOR
+    Route::post('/vendors', [VendorController::class, 'store']);
+    Route::put('/vendors/{id}', [VendorController::class, 'update']);
+    Route::delete('/vendors/{id}', [VendorController::class, 'destroy']);
+    Route::put('/vendors/{id}/toggle', [VendorController::class, 'toggleStatus']);
+
+    // CUSTOMER
+    Route::post('/customers', [CustomerController::class, 'store']);
+    Route::put('/customers/{id}', [CustomerController::class, 'update']);
+    Route::put('/customers/{id}/toggle', [CustomerController::class, 'toggleStatus']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| INPUT STATUS (UNTUK FRONTEND)
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/input-status', function () {
+    $today = now()->day;
+
+    return response()->json([
+        'is_open' => $today !== 5,
+        'message' => $today === 5
+            ? 'Input ditutup tanggal 5'
+            : 'Input dibuka'
+    ]);
 });
